@@ -79,8 +79,8 @@ function updateDiagnostics(document: vscode.TextDocument) {
         const typeString = checker.typeToString(type);
 
         if (typeString === 'any') {
-          const start = node.getStart();
-          const end = node.getEnd();
+          const start = node.name.getStart();
+          const end = node.name.getEnd();
           const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
 
           const diagnostic = new vscode.Diagnostic(

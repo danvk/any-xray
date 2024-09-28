@@ -55,23 +55,37 @@ function findTheAnys(document: vscode.TextDocument) {
 		console.error('failed to parse tsconfig.json', e);
 		return;
 	}
+	if (configParseResult.errors.length) {
+		console.error('tsconfig.json errors', configParseResult.errors);
+	}
 
   // Step 3: Create the TypeScript Program with all files from tsconfig.json
+	// console.log('fileNames:', configParseResult.fileNames);
+	// console.log('config', tsConfigPath);
+	// console.log('options', configParseResult.options);
   const program = ts.createProgram(configParseResult.fileNames, configParseResult.options);
 
   const checker = program.getTypeChecker();
 
   // Step 4: Traverse the AST of the current file and find inferred any types
+	// TODO: is it better to access document.getText() here, rather than going through program.getSourceFile?
   const sourceFile = program.getSourceFile(document.uri.fsPath);
   if (!sourceFile) {
     return;
   }
 	const matches: vscode.DecorationOptions[] = [];
   function visit(node: ts.Node) {
+		if (ts.isImportDeclaration(node)) {
+			return;  // we want no part in these
+		}
     if (ts.isIdentifier(node)) {
 			const type = checker.getTypeAtLocation(node);
 			const typeString = checker.typeToString(type);
-			// console.log(node.getText(), typeString);
+
+			// XXX any public way to get at this?
+			if ((type as any).intrinsicName === 'error') {
+				return;
+			}
 
 			// Check if the type is inferred as 'any'
 			if (typeString === 'any' && !ts.isTypePredicateNode(node.parent)) {

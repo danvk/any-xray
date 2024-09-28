@@ -16,8 +16,13 @@ const errorType = vscode.window.createTextEditorDecorationType({
 	border: 'solid 2px rgba(255,255,0)',
 });
 
+let languageService: ts.LanguageService;
+let fileVersions: { [fileName: string]: number } = {};
+
 export function activate(context: vscode.ExtensionContext) {
 	console.log('activate');
+
+  setupLanguageService();
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
@@ -37,48 +42,27 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function findTheAnys(document: vscode.TextDocument) {
-  // Step 1: Get workspace folder and tsconfig.json path
-  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-  if (!workspaceFolder) {
-    return;
-  }
+	const fileName = document.uri.fsPath;
+  fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
 
-  const tsConfigPath = path.join(workspaceFolder.uri.fsPath, 'tsconfig.json');
-  if (!fs.existsSync(tsConfigPath)) {
-    vscode.window.showWarningMessage('No tsconfig.json found in the workspace folder.');
-    return;
-  }
+  // const sourceCode = document.getText();
+  // const scriptSnapshot = ts.ScriptSnapshot.fromString(sourceCode);
 
-  // Step 2: Parse tsconfig.json to get compiler options and file list
-	let configParseResult;
-	try {
-		configParseResult = ts.parseJsonConfigFileContent(
-			ts.parseConfigFileTextToJson(tsConfigPath, fs.readFileSync(tsConfigPath, 'utf8')).config,
-			ts.sys,
-			workspaceFolder.uri.fsPath
-		);
-	} catch (e) {
-		console.error('failed to parse tsconfig.json', e);
+  // Step 6: Analyze the file using the Language Service
+  const program = languageService.getProgram();
+  if (!program) {
+		console.warn('no program');
 		return;
 	}
-	if (configParseResult.errors.length) {
-		console.error('tsconfig.json errors', configParseResult.errors);
-	}
 
-  // Step 3: Create the TypeScript Program with all files from tsconfig.json
-	// console.log('fileNames:', configParseResult.fileNames);
-	// console.log('config', tsConfigPath);
-	// console.log('options', configParseResult.options);
-  const program = ts.createProgram(configParseResult.fileNames, configParseResult.options);
+  const sourceFile = program.getSourceFile(fileName);
+  if (!sourceFile) {
+		console.warn('no source file');
+		return;
+	}
 
   const checker = program.getTypeChecker();
 
-  // Step 4: Traverse the AST of the current file and find inferred any types
-	// TODO: is it better to access document.getText() here, rather than going through program.getSourceFile?
-  const sourceFile = program.getSourceFile(document.uri.fsPath);
-  if (!sourceFile) {
-    return;
-  }
 	const matches: vscode.DecorationOptions[] = [];
 	const errors: vscode.DecorationOptions[] = [];
   function visit(node: ts.Node) {
@@ -115,4 +99,54 @@ function findTheAnys(document: vscode.TextDocument) {
 
 export function deactivate() {
 	console.log('deactivate');
+}
+
+function setupLanguageService() {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+  if (!workspaceFolder) {
+    vscode.window.showErrorMessage('No workspace folder found.');
+    return;
+  }
+
+  const tsConfigPath = path.join(workspaceFolder, 'tsconfig.json');
+  if (!fs.existsSync(tsConfigPath)) {
+    vscode.window.showWarningMessage('No tsconfig.json found in the workspace folder.');
+    return;
+  }
+
+  // Step 2: Parse tsconfig.json to get compiler options and file list
+	let config;
+	try {
+		config = ts.parseJsonConfigFileContent(
+			ts.parseConfigFileTextToJson(tsConfigPath, fs.readFileSync(tsConfigPath, 'utf8')).config,
+			ts.sys,
+			workspaceFolder
+		);
+	} catch (e) {
+		vscode.window.showWarningMessage('Failed to load tsconfig.json');
+		return;
+	}
+	if (config.errors.length) {
+		vscode.window.showWarningMessage(`tsconfig.json errors ${config.errors}`);
+	}
+
+  // Step 3: Create a script snapshot and set up Language Service host
+  const host: ts.LanguageServiceHost = {
+    getScriptFileNames: () => config.fileNames,
+    getScriptVersion: (fileName) => fileVersions[fileName]?.toString() ?? '0',
+    getScriptSnapshot: (fileName) => {
+      if (fs.existsSync(fileName)) {
+        return ts.ScriptSnapshot.fromString(fs.readFileSync(fileName, 'utf8'));
+      }
+      return undefined;
+    },
+    getCurrentDirectory: () => workspaceFolder,
+    getCompilationSettings: () => config.options,
+    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+		readFile: ts.sys.readFile,
+		fileExists: ts.sys.fileExists,
+  };
+
+  // Step 4: Create the TypeScript Language Service
+  languageService = ts.createLanguageService(host, ts.createDocumentRegistry());
 }

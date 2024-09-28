@@ -3,9 +3,14 @@ import * as ts from 'typescript';
 import * as path from 'path';
 import * as fs from 'fs';
 
+const decorationType = vscode.window.createTextEditorDecorationType({
+  backgroundColor: 'rgba(255,0,0,0.3)' // Red translucent highlight
+});
+
 let diagnosticCollection: vscode.DiagnosticCollection;
 
 export function activate(context: vscode.ExtensionContext) {
+	console.log('activate');
   diagnosticCollection = vscode.languages.createDiagnosticCollection('typescript');
 
   context.subscriptions.push(
@@ -79,7 +84,7 @@ function updateDiagnostics(document: vscode.TextDocument) {
   if (!sourceFile) {
     return;
   }
-
+	const matches: vscode.DecorationOptions[] = [];
   function visit(node: ts.Node) {
     if (ts.isIdentifier(node)) {
 			const type = checker.getTypeAtLocation(node);
@@ -98,18 +103,24 @@ function updateDiagnostics(document: vscode.TextDocument) {
 					vscode.DiagnosticSeverity.Warning
 				);
 				diagnostics.push(diagnostic);
+				matches.push({range});
 			}
 		}
     node.forEachChild(visit);
   }
 
   visit(sourceFile);
+	const editor = vscode.window.activeTextEditor;
+	if (editor?.document === document) {
+		editor.setDecorations(decorationType, matches);
+	}
 
   // Step 5: Apply diagnostics to the document
-  diagnosticCollection.set(document.uri, diagnostics);
+  // diagnosticCollection.set(document.uri, diagnostics);
 }
 
 export function deactivate() {
+	console.log('deactivate');
   if (diagnosticCollection) {
     diagnosticCollection.dispose();
   }

@@ -81,12 +81,12 @@ function updateDiagnostics(document: vscode.TextDocument) {
   }
 
   function visit(node: ts.Node) {
-    if (ts.isVariableDeclaration(node) && !node.type) {
-      const symbol = checker.getSymbolAtLocation(node.name);
+    if (ts.isIdentifier(node)) {
+      const symbol = checker.getSymbolAtLocation(node);
       if (symbol) {
         const type = checker.getTypeOfSymbolAtLocation(symbol, node);
         const typeString = checker.typeToString(type);
-				console.log(node.name.getText(), typeString);
+				console.log(node.getText(), typeString);
 
         // Check if the type is inferred as 'any'
         if (typeString === 'any') {
@@ -96,7 +96,7 @@ function updateDiagnostics(document: vscode.TextDocument) {
 
           const diagnostic = new vscode.Diagnostic(
             range,
-            `Variable "${node.name.getText()}" is inferred as 'any'`,
+            `Variable "${node.getText()}" is inferred as 'any'`,
             vscode.DiagnosticSeverity.Warning
           );
           diagnostics.push(diagnostic);

@@ -28,22 +28,36 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
 			// this is fired on every keystroke
-      if (event.document.languageId === 'typescript') {
-        findTheAnys(event.document);
+			const {activeTextEditor} = vscode.window;
+      if (event.document.languageId === 'typescript' && event.document === activeTextEditor?.document) {
+        findTheAnys(event.document, activeTextEditor);
       }
-    })
+    }),
+    vscode.workspace.onDidOpenTextDocument((document) => {
+			const {activeTextEditor} = vscode.window;
+      if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
+				console.log('onDidOpenTextDocument');
+        findTheAnys(document, activeTextEditor);
+      }
+    }),
   );
 
-  context.subscriptions.push(
-    vscode.workspace.onDidOpenTextDocument((document) => {
-      if (document.languageId === 'typescript') {
-        findTheAnys(document);
-      }
-    })
-  );
+	vscode.window.onDidChangeActiveTextEditor((editor) => {
+		if (editor?.document.languageId === 'typescript') {
+			console.log("onDidChangeActiveTextEditor");
+			findTheAnys(editor.document, editor);
+		}
+	});
+
+	vscode.window.visibleTextEditors.forEach((editor) => {
+		if (editor.document.languageId === 'typescript') {
+			console.log('initial pass for', editor.document.uri.fsPath);
+			findTheAnys(editor.document, editor);
+		}
+	});
 }
 
-function findTheAnys(document: vscode.TextDocument) {
+function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 	const fileName = document.uri.fsPath;
   fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
 
@@ -77,7 +91,6 @@ function findTheAnys(document: vscode.TextDocument) {
 			const type = checker.getTypeAtLocation(node);
 			const typeString = checker.typeToString(type);
 
-
 			// Check if the type is inferred as 'any'
 			if (typeString === 'any' && !ts.isTypePredicateNode(node.parent)) {
 				const start = node.getStart();
@@ -94,11 +107,8 @@ function findTheAnys(document: vscode.TextDocument) {
   }
 
   visit(sourceFile);
-	const editor = vscode.window.activeTextEditor;
-	if (editor?.document === document) {
-		editor.setDecorations(decorationType, matches);
-		editor.setDecorations(errorType, errors);
-	}
+	editor.setDecorations(decorationType, matches);
+	editor.setDecorations(errorType, errors);
 }
 
 export function deactivate() {

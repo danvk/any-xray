@@ -4,9 +4,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 const decorationType = vscode.window.createTextEditorDecorationType({
-  // backgroundColor: 'rgba(255,0,0,0.1)', // Red translucent highlight
-	// borderRadius: '3px',
-	// border: 'solid 1px rgba(255,0,0)',
+  backgroundColor: 'rgba(255,0,0,0.1)', // Red translucent highlight
+	borderRadius: '3px',
+	border: 'solid 1px rgba(255,0,0)',
 	color: 'red',
 });
 

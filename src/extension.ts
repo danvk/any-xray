@@ -10,6 +10,12 @@ const decorationType = vscode.window.createTextEditorDecorationType({
 	color: 'red',
 });
 
+const errorType = vscode.window.createTextEditorDecorationType({
+  backgroundColor: 'rgba(255,255,0,0.25)',
+	borderRadius: '3px',
+	border: 'solid 2px rgba(255,255,0)',
+});
+
 export function activate(context: vscode.ExtensionContext) {
 	console.log('activate');
 
@@ -74,6 +80,7 @@ function findTheAnys(document: vscode.TextDocument) {
     return;
   }
 	const matches: vscode.DecorationOptions[] = [];
+	const errors: vscode.DecorationOptions[] = [];
   function visit(node: ts.Node) {
 		if (ts.isImportDeclaration(node)) {
 			return;  // we want no part in these
@@ -82,17 +89,17 @@ function findTheAnys(document: vscode.TextDocument) {
 			const type = checker.getTypeAtLocation(node);
 			const typeString = checker.typeToString(type);
 
-			// XXX any public way to get at this?
-			if ((type as any).intrinsicName === 'error') {
-				return;
-			}
 
 			// Check if the type is inferred as 'any'
 			if (typeString === 'any' && !ts.isTypePredicateNode(node.parent)) {
 				const start = node.getStart();
 				const end = node.getEnd();
 				const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
-				matches.push({range});
+				if (type.intrinsicName === 'error') {
+					errors.push({range});
+				} else {
+					matches.push({range});
+				}
 			}
 		}
     node.forEachChild(visit);
@@ -102,6 +109,7 @@ function findTheAnys(document: vscode.TextDocument) {
 	const editor = vscode.window.activeTextEditor;
 	if (editor?.document === document) {
 		editor.setDecorations(decorationType, matches);
+		editor.setDecorations(errorType, errors);
 	}
 }
 

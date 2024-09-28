@@ -11,7 +11,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.languageId === 'typescript') {
-				console.log('here1');
         updateDiagnostics(event.document);
       }
     })
@@ -20,7 +19,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument((document) => {
       if (document.languageId === 'typescript') {
-				console.log('here2');
         updateDiagnostics(document);
       }
     })
@@ -37,7 +35,6 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.languages.registerCodeActionsProvider('typescript', {
 			provideCodeActions: (document, range, context, token) => {
 				// For now, we are not returning any code actions, just showing diagnostics
-				console.log('here3');
 				return [];
 			}
 		})
@@ -45,23 +42,19 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function updateDiagnostics(document: vscode.TextDocument) {
-	console.log('update diagnostics');
   const diagnostics: vscode.Diagnostic[] = [];
 
   // Step 1: Get workspace folder and tsconfig.json path
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
   if (!workspaceFolder) {
-		console.log('no workspace folder!');
     return;
   }
-	console.log('workspace folder', workspaceFolder.uri.fsPath);
 
   const tsConfigPath = path.join(workspaceFolder.uri.fsPath, 'tsconfig.json');
   if (!fs.existsSync(tsConfigPath)) {
     vscode.window.showWarningMessage('No tsconfig.json found in the workspace folder.');
     return;
   }
-	console.log('tsconfig path', tsConfigPath);
 
   // Step 2: Parse tsconfig.json to get compiler options and file list
 	let configParseResult;
@@ -78,21 +71,17 @@ function updateDiagnostics(document: vscode.TextDocument) {
 
   // Step 3: Create the TypeScript Program with all files from tsconfig.json
   const program = ts.createProgram(configParseResult.fileNames, configParseResult.options);
-	console.log('program files', configParseResult.fileNames);
 
   const checker = program.getTypeChecker();
 
   // Step 4: Traverse the AST of the current file and find inferred any types
   const sourceFile = program.getSourceFile(document.uri.fsPath);
   if (!sourceFile) {
-		console.log('no source file!');
     return;
   }
 
   function visit(node: ts.Node) {
-		console.log('visit');
     if (ts.isVariableDeclaration(node) && !node.type) {
-			console.log('variable declaration', node.name.getText());
       const symbol = checker.getSymbolAtLocation(node.name);
       if (symbol) {
         const type = checker.getTypeOfSymbolAtLocation(symbol, node);

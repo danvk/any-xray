@@ -4,7 +4,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 const decorationType = vscode.window.createTextEditorDecorationType({
-  backgroundColor: 'rgba(255,0,0,0.3)' // Red translucent highlight
+  // backgroundColor: 'rgba(255,0,0,0.1)', // Red translucent highlight
+	// borderRadius: '3px',
+	// border: 'solid 1px rgba(255,0,0)',
+	color: 'red',
 });
 
 export function activate(context: vscode.ExtensionContext) {
@@ -71,7 +74,7 @@ function findTheAnys(document: vscode.TextDocument) {
 			// console.log(node.getText(), typeString);
 
 			// Check if the type is inferred as 'any'
-			if (typeString === 'any') {
+			if (typeString === 'any' && !ts.isTypePredicateNode(node.parent)) {
 				const start = node.getStart();
 				const end = node.getEnd();
 				const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
@@ -86,14 +89,8 @@ function findTheAnys(document: vscode.TextDocument) {
 	if (editor?.document === document) {
 		editor.setDecorations(decorationType, matches);
 	}
-
-  // Step 5: Apply diagnostics to the document
-  // diagnosticCollection.set(document.uri, diagnostics);
 }
 
 export function deactivate() {
 	console.log('deactivate');
-  if (diagnosticCollection) {
-    diagnosticCollection.dispose();
-  }
 }

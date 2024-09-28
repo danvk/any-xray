@@ -7,16 +7,13 @@ const decorationType = vscode.window.createTextEditorDecorationType({
   backgroundColor: 'rgba(255,0,0,0.3)' // Red translucent highlight
 });
 
-let diagnosticCollection: vscode.DiagnosticCollection;
-
 export function activate(context: vscode.ExtensionContext) {
 	console.log('activate');
-  diagnosticCollection = vscode.languages.createDiagnosticCollection('typescript');
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.languageId === 'typescript') {
-        updateDiagnostics(event.document);
+        findTheAnys(event.document);
       }
     })
   );
@@ -24,31 +21,13 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument((document) => {
       if (document.languageId === 'typescript') {
-        updateDiagnostics(document);
+        findTheAnys(document);
       }
     })
   );
-
-  context.subscriptions.push(
-    vscode.workspace.onDidCloseTextDocument((document) => {
-      diagnosticCollection.delete(document.uri);
-    })
-  );
-
-	// Register the code action provider (even though it won't return actions yet)
-	context.subscriptions.push(
-		vscode.languages.registerCodeActionsProvider('typescript', {
-			provideCodeActions: (document, range, context, token) => {
-				// For now, we are not returning any code actions, just showing diagnostics
-				return [];
-			}
-		})
-	);
 }
 
-function updateDiagnostics(document: vscode.TextDocument) {
-  const diagnostics: vscode.Diagnostic[] = [];
-
+function findTheAnys(document: vscode.TextDocument) {
   // Step 1: Get workspace folder and tsconfig.json path
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
   if (!workspaceFolder) {
@@ -96,13 +75,6 @@ function updateDiagnostics(document: vscode.TextDocument) {
 				const start = node.getStart();
 				const end = node.getEnd();
 				const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
-
-				const diagnostic = new vscode.Diagnostic(
-					range,
-					`Variable "${node.getText()}" is inferred as 'any'`,
-					vscode.DiagnosticSeverity.Warning
-				);
-				diagnostics.push(diagnostic);
 				matches.push({range});
 			}
 		}

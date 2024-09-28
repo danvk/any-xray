@@ -18,6 +18,7 @@ const errorType = vscode.window.createTextEditorDecorationType({
 
 let languageService: ts.LanguageService;
 let fileVersions: { [fileName: string]: number } = {};
+let fileSnapshot: { [fileName: string]: ts.IScriptSnapshot } = {};
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log('activate');
@@ -26,6 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
+			// this is fired on every keystroke
       if (event.document.languageId === 'typescript') {
         findTheAnys(event.document);
       }
@@ -45,8 +47,10 @@ function findTheAnys(document: vscode.TextDocument) {
 	const fileName = document.uri.fsPath;
   fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
 
-  // const sourceCode = document.getText();
-  // const scriptSnapshot = ts.ScriptSnapshot.fromString(sourceCode);
+  const sourceCode = document.getText();
+  const scriptSnapshot = ts.ScriptSnapshot.fromString(sourceCode);
+	// TODO: purge this after the file is saved?
+	fileSnapshot[fileName] = scriptSnapshot;
 
   // Step 6: Analyze the file using the Language Service
   const program = languageService.getProgram();
@@ -135,6 +139,10 @@ function setupLanguageService() {
     getScriptFileNames: () => config.fileNames,
     getScriptVersion: (fileName) => fileVersions[fileName]?.toString() ?? '0',
     getScriptSnapshot: (fileName) => {
+			const snap = (fileSnapshot[fileName]);
+			if (snap) {
+				return snap;
+			}
       if (fs.existsSync(fileName)) {
         return ts.ScriptSnapshot.fromString(fs.readFileSync(fileName, 'utf8'));
       }

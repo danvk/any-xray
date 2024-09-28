@@ -54,6 +54,7 @@ function updateDiagnostics(document: vscode.TextDocument) {
   const compilerHost: ts.CompilerHost = {
     getSourceFile: (fileName, languageVersion) => {
       if (fileName === document.uri.fsPath) {
+				// console.log('getSourceFile hit', fileName);
 				return sourceFile;
 			}
       return undefined;
@@ -65,43 +66,47 @@ function updateDiagnostics(document: vscode.TextDocument) {
     getCanonicalFileName: (fileName) => fileName,
     getNewLine: () => "\n",
     useCaseSensitiveFileNames: () => true,
-    fileExists: (fileName) => fileName === document.uri.fsPath,
-    readFile: (fileName) => fileName === document.uri.fsPath ? sourceCode : undefined
+    fileExists: (fileName) => {
+			// console.log('fileExists', fileName === document.uri.fsPath, fileName);
+			return fileName === document.uri.fsPath;
+		},
+    readFile: (fileName) => {
+			// console.log('readFile', fileName === document.uri.fsPath);
+			return fileName === document.uri.fsPath ? sourceCode : undefined;
+		}
   };
 
   const program = ts.createProgram([fileName], { noEmit: true }, compilerHost);
   const checker = program.getTypeChecker();
-	const languageService = ts.createLanguageService(getLanguageServiceHost(program));
+	// const languageService = ts.createLanguageService(getLanguageServiceHost(program));
 
   // Step 2: Traverse the AST and find inferred any types
   function visit(node: ts.Node) {
-    if ((ts.isVariableDeclaration(node) || ts.isParameter(node)) && !node.type) {
-      const symbol = checker.getSymbolAtLocation(node.name);
+    if (ts.isIdentifier(node)) {
+			const id = node;
+      const symbol = checker.getSymbolAtLocation(id);
       if (symbol) {
-        const type = checker.getTypeOfSymbolAtLocation(symbol, node);
+				const type = getContextualType(checker, node);
+				if (!type) {
+					console.log('no type', id.getText());
+					return;
+				}
+        // const type = checker.getTypeOfSymbolAtLocation(symbol, id);
         const typeString = checker.typeToString(type);
+				console.log('id', id.getText(), typeString);
 
         if (typeString === 'any') {
-					const qi = languageService.getQuickInfoAtPosition(fileName, node.name.getStart());
-					if (!qi?.displayParts) {
-						return;
-					}
-					const flowTypeStr = qi.displayParts.map(dp => dp.text).join('');
-					console.log('any-xray', node.name.getText(), flowTypeStr);
-					const flowType = qi.displayParts.at(-1)?.text;
-					if (flowType === 'any') {
-						const start = node.name.getStart();
-						const end = node.name.getEnd();
-						const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
+					const start = id.getStart();
+					const end = id.getEnd();
+					const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
 
-						const diagnostic = new vscode.Diagnostic(
-							range,
-							`Variable "${node.name.getText()}" is inferred as 'any'`,
-							vscode.DiagnosticSeverity.Warning
-						);
-						diagnostics.push(diagnostic);
-					}
-        }
+					const diagnostic = new vscode.Diagnostic(
+						range,
+						`Variable "${id.getText()}" is inferred as 'any'`,
+						vscode.DiagnosticSeverity.Warning
+					);
+					diagnostics.push(diagnostic);
+				}
       }
     }
     node.forEachChild(visit);
@@ -138,6 +143,7 @@ function getLanguageServiceHost(program: ts.Program): ts.LanguageServiceHost {
   };
 }
 
+// https://github.com/typescript-eslint/typescript-eslint/blob/94c5484f747be901f1610fc37192714a619bb355/packages/type-utils/src/getContextualType.ts#L8
 /**
  * Returns the contextual type of a given node.
  * Contextual type is the type of the target the node is going into.

@@ -82,34 +82,24 @@ function updateDiagnostics(document: vscode.TextDocument) {
 
   function visit(node: ts.Node) {
     if (ts.isIdentifier(node)) {
-			const nodeForSymbol = ts.isPropertyAccessExpression(node.parent) ? node.parent : node;
-      const symbol = checker.getSymbolAtLocation(nodeForSymbol);
-			if (!symbol) {
-				console.log('no symbol found for', node.getText());
-				if (ts.isPropertyAccessExpression(node.parent)) {
-					console.log('parent:', node.parent.getText());
-					console.log('type at location', checker.getTypeAtLocation(node));
-				}
-			} else {
-        const type = checker.getTypeOfSymbolAtLocation(symbol, node);
-        const typeString = checker.typeToString(type);
-				// console.log(node.getText(), typeString);
+			const type = checker.getTypeAtLocation(node);
+			const typeString = checker.typeToString(type);
+			// console.log(node.getText(), typeString);
 
-        // Check if the type is inferred as 'any'
-        if (typeString === 'any') {
-          const start = node.getStart();
-          const end = node.getEnd();
-          const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
+			// Check if the type is inferred as 'any'
+			if (typeString === 'any') {
+				const start = node.getStart();
+				const end = node.getEnd();
+				const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
 
-          const diagnostic = new vscode.Diagnostic(
-            range,
-            `Variable "${node.getText()}" is inferred as 'any'`,
-            vscode.DiagnosticSeverity.Warning
-          );
-          diagnostics.push(diagnostic);
-        }
-      }
-    }
+				const diagnostic = new vscode.Diagnostic(
+					range,
+					`Variable "${node.getText()}" is inferred as 'any'`,
+					vscode.DiagnosticSeverity.Warning
+				);
+				diagnostics.push(diagnostic);
+			}
+		}
     node.forEachChild(visit);
   }
 

@@ -40,6 +40,10 @@ export function activate(context: vscode.ExtensionContext) {
         findTheAnys(document, activeTextEditor);
       }
     }),
+		vscode.workspace.onDidCloseTextDocument((document) => {
+			delete fileVersions[document.uri.fsPath];
+			delete fileSnapshot[document.uri.fsPath];
+		}),
   );
 
 	vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -49,12 +53,29 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	vscode.window.visibleTextEditors.forEach((editor) => {
-		if (editor.document.languageId === 'typescript') {
-			console.log('initial pass for', editor.document.uri.fsPath);
-			findTheAnys(editor.document, editor);
+	const visibleUris = new Set<string>();
+	for (const group of vscode.window.tabGroups.all) {
+		const {activeTab} = group;
+		if (!activeTab) {
+			return;
 		}
-	});
+		const {input} = activeTab;
+		if (input && typeof input === 'object' && 'uri' in input) {
+			const textInput = input as vscode.TabInputText;
+			visibleUris.add(textInput.uri.fsPath);
+		}
+	}
+	console.log('num visible URIs:', visibleUris.size);
+
+	// TODO: is there some kind of "idle" event I can use instead of this?
+	setTimeout(() => {
+		vscode.window.visibleTextEditors.forEach((editor) => {
+			if (editor.document.languageId === 'typescript' && visibleUris.has(editor.document.uri.fsPath)) {
+				console.log('initial pass for', editor.document.uri.fsPath);
+				findTheAnys(editor.document, editor);
+			}
+		});
+	}, 0);
 }
 
 function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {

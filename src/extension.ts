@@ -37,7 +37,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidOpenTextDocument((document) => {
 			const {activeTextEditor} = vscode.window;
       if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
-				console.log('onDidOpenTextDocument');
+				// console.log('onDidOpenTextDocument');
         findTheAnyDebounced(document, activeTextEditor);
       }
     }),
@@ -49,7 +49,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	vscode.window.onDidChangeActiveTextEditor((editor) => {
 		if (editor?.document.languageId === 'typescript') {
-			console.log("onDidChangeActiveTextEditor");
+			// console.log("onDidChangeActiveTextEditor");
 			findTheAnyDebounced(editor.document, editor);
 		}
 	});
@@ -66,13 +66,13 @@ export async function activate(context: vscode.ExtensionContext) {
 			visibleUris.add(textInput.uri.fsPath);
 		}
 	}
-	console.log('num visible URIs:', visibleUris.size);
+	// console.log('num visible URIs:', visibleUris.size);
 
 	// TODO: is there some kind of "idle" event I can use instead of this?
 	setTimeout(() => {
 		vscode.window.visibleTextEditors.forEach((editor) => {
 			if (editor.document.languageId === 'typescript' && visibleUris.has(editor.document.uri.fsPath)) {
-				console.log('initial pass for', editor.document.uri.fsPath);
+				// console.log('initial pass for', editor.document.uri.fsPath);
 				findTheAnys(editor.document, editor);
 			}
 		});
@@ -169,7 +169,6 @@ function setupLanguageService() {
 	if (config.errors.length) {
 		vscode.window.showWarningMessage(`tsconfig.json errors ${config.errors}`);
 	}
-	console.log(config);
 
   // Step 3: Create a script snapshot and set up Language Service host
   const host: ts.LanguageServiceHost = {
@@ -188,20 +187,12 @@ function setupLanguageService() {
     },
     getCurrentDirectory: () => workspaceFolder,
     getCompilationSettings: () => config.options,
-    getDefaultLibFileName: (options) => {
-			const ret = ts.getDefaultLibFilePath(options);
-			return ret;
-		},
+		getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
 		readFile: ts.sys.readFile,
-		fileExists(path) {
-			const exists = ts.sys.fileExists(path);
-			if (path.includes('jest')) {
-				console.log('fileExists', path, exists);
-			}
-			return exists;
-		},
+		fileExists: ts.sys.fileExists,
 		getDirectories: ts.sys.getDirectories,
 		readDirectory: ts.sys.readDirectory,
+		directoryExists: ts.sys.directoryExists,
   };
 
   // Step 4: Create the TypeScript Language Service

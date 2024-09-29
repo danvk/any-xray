@@ -4,12 +4,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import debounce from 'lodash.debounce';
 
-const decorationType = vscode.window.createTextEditorDecorationType({
-  backgroundColor: 'rgba(255,0,0,0.1)', // Red translucent highlight
-	borderRadius: '3px',
-	border: 'solid 1px rgba(255,0,0)',
-	color: 'red',
-});
+
+let decorationType: vscode.TextEditorDecorationType;
+let showErrors = false;
 
 const errorType = vscode.window.createTextEditorDecorationType({
   backgroundColor: 'rgba(255,255,0,0.25)',
@@ -23,6 +20,10 @@ let fileSnapshot: { [fileName: string]: ts.IScriptSnapshot } = {};
 
 export async function activate(context: vscode.ExtensionContext) {
 	console.log('any-xray: activate');
+	const config = vscode.workspace.getConfiguration('anyXray');
+	const configStyle = config.get('anyStyle') as vscode.DecorationRenderOptions;
+	decorationType = vscode.window.createTextEditorDecorationType(configStyle);
+	showErrors = config.get('renderErrorAnys') as boolean;
 
   setupLanguageService();
 
@@ -120,7 +121,9 @@ function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 				const end = node.getEnd();
 				const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
 				if (type.intrinsicName === 'error') {
-					errors.push({range});
+					if (showErrors) {
+						errors.push({range});
+					}
 				} else {
 					matches.push({range});
 				}

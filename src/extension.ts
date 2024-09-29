@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as ts from 'typescript';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as _ from 'lodash';
 
 const decorationType = vscode.window.createTextEditorDecorationType({
   backgroundColor: 'rgba(255,0,0,0.1)', // Red translucent highlight
@@ -20,7 +21,7 @@ let languageService: ts.LanguageService;
 let fileVersions: { [fileName: string]: number } = {};
 let fileSnapshot: { [fileName: string]: ts.IScriptSnapshot } = {};
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
 	console.log('activate');
 
   setupLanguageService();
@@ -30,14 +31,14 @@ export function activate(context: vscode.ExtensionContext) {
 			// this is fired on every keystroke
 			const {activeTextEditor} = vscode.window;
       if (event.document.languageId === 'typescript' && event.document === activeTextEditor?.document) {
-        findTheAnys(event.document, activeTextEditor);
+        findTheAnyDebounced(event.document, activeTextEditor);
       }
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
 			const {activeTextEditor} = vscode.window;
       if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
 				console.log('onDidOpenTextDocument');
-        findTheAnys(document, activeTextEditor);
+        findTheAnyDebounced(document, activeTextEditor);
       }
     }),
 		vscode.workspace.onDidCloseTextDocument((document) => {
@@ -49,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
 	vscode.window.onDidChangeActiveTextEditor((editor) => {
 		if (editor?.document.languageId === 'typescript') {
 			console.log("onDidChangeActiveTextEditor");
-			findTheAnys(editor.document, editor);
+			findTheAnyDebounced(editor.document, editor);
 		}
 	});
 
@@ -131,6 +132,8 @@ function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 	editor.setDecorations(decorationType, matches);
 	editor.setDecorations(errorType, errors);
 }
+
+const findTheAnyDebounced = _.debounce(findTheAnys, 250);
 
 export function deactivate() {
 	console.log('deactivate');

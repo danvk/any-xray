@@ -4,12 +4,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import debounce from 'lodash.debounce';
 
-const decorationType = vscode.window.createTextEditorDecorationType({
-  backgroundColor: 'rgba(255,0,0,0.1)', // Red translucent highlight
-	borderRadius: '3px',
-	border: 'solid 1px rgba(255,0,0)',
-	color: 'red',
-});
+
+const configurationSection = 'anyXray';
+
+let decorationType: vscode.TextEditorDecorationType;
+let showErrors = false;
 
 const errorType = vscode.window.createTextEditorDecorationType({
   backgroundColor: 'rgba(255,255,0,0.25)',
@@ -17,13 +16,20 @@ const errorType = vscode.window.createTextEditorDecorationType({
 	border: 'solid 2px rgba(255,255,0)',
 });
 
+const fallbackDecorationStyle: vscode.DecorationRenderOptions = {
+	backgroundColor: "rgba(255,0,0,0.1)",
+	borderRadius: "3px",
+	border: "solid 1px rgba(255,0,0)",
+	color: "red"
+};
+
 let languageService: ts.LanguageService;
 let fileVersions: { [fileName: string]: number } = {};
 let fileSnapshot: { [fileName: string]: ts.IScriptSnapshot } = {};
 
 export async function activate(context: vscode.ExtensionContext) {
 	console.log('any-xray: activate');
-
+	loadConfiguration();
   setupLanguageService();
 
   context.subscriptions.push(
@@ -54,29 +60,36 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	const visibleUris = new Set<string>();
-	for (const group of vscode.window.tabGroups.all) {
-		const {activeTab} = group;
-		if (!activeTab) {
-			return;
+	const updateVisibleEditors = () => {
+		const visibleUris = new Set<string>();
+		for (const group of vscode.window.tabGroups.all) {
+			const {activeTab} = group;
+			if (!activeTab) {
+				return;
+			}
+			const {input} = activeTab;
+			if (input && typeof input === 'object' && 'uri' in input) {
+				const textInput = input as vscode.TabInputText;
+				visibleUris.add(textInput.uri.fsPath);
+			}
 		}
-		const {input} = activeTab;
-		if (input && typeof input === 'object' && 'uri' in input) {
-			const textInput = input as vscode.TabInputText;
-			visibleUris.add(textInput.uri.fsPath);
-		}
-	}
-	// console.log('num visible URIs:', visibleUris.size);
-
-	// TODO: is there some kind of "idle" event I can use instead of this?
-	setTimeout(() => {
 		vscode.window.visibleTextEditors.forEach((editor) => {
 			if (editor.document.languageId === 'typescript' && visibleUris.has(editor.document.uri.fsPath)) {
 				// console.log('initial pass for', editor.document.uri.fsPath);
 				findTheAnys(editor.document, editor);
 			}
 		});
-	}, 0);
+	};
+
+	vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration(configurationSection)) {
+      loadConfiguration();
+			updateVisibleEditors();
+    }
+  });
+
+	// TODO: is there some kind of "idle" event I can use instead of this?
+	setTimeout(updateVisibleEditors, 0);
 }
 
 function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
@@ -120,7 +133,9 @@ function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 				const end = node.getEnd();
 				const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
 				if (type.intrinsicName === 'error') {
-					errors.push({range});
+					if (showErrors) {
+						errors.push({range});
+					}
 				} else {
 					matches.push({range});
 				}
@@ -135,6 +150,23 @@ function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 }
 
 const findTheAnyDebounced = debounce(findTheAnys, 250);
+
+function loadConfiguration() {
+	console.log('any-xray: loading configuration');
+	const config = vscode.workspace.getConfiguration(configurationSection);
+	const configStyle = config.get('anyStyle') ?? fallbackDecorationStyle as vscode.DecorationRenderOptions;
+	if (decorationType) {
+		decorationType.dispose();
+	}
+	try {
+		decorationType = vscode.window.createTextEditorDecorationType(configStyle);
+	} catch (e) {
+		vscode.window.showErrorMessage('Invalid anyXray.anyStyle; falling back to default.');
+		decorationType = vscode.window.createTextEditorDecorationType(fallbackDecorationStyle);
+	}
+
+	showErrors = config.get('renderErrorAnys') as boolean;
+}
 
 export function deactivate() {
 	console.log('deactivate');

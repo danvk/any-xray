@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as ts from 'typescript';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as _ from 'lodash';
+import debounce from 'lodash.debounce';
 
 const decorationType = vscode.window.createTextEditorDecorationType({
   backgroundColor: 'rgba(255,0,0,0.1)', // Red translucent highlight
@@ -22,7 +22,7 @@ let fileVersions: { [fileName: string]: number } = {};
 let fileSnapshot: { [fileName: string]: ts.IScriptSnapshot } = {};
 
 export async function activate(context: vscode.ExtensionContext) {
-	console.log('activate');
+	console.log('any-xray: activate');
 
   setupLanguageService();
 
@@ -134,7 +134,7 @@ function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 	editor.setDecorations(errorType, errors);
 }
 
-const findTheAnyDebounced = _.debounce(findTheAnys, 250);
+const findTheAnyDebounced = debounce(findTheAnys, 250);
 
 export function deactivate() {
 	console.log('deactivate');
@@ -171,14 +171,13 @@ function setupLanguageService() {
 	if (config.errors.length) {
 		vscode.window.showWarningMessage(`tsconfig.json errors ${config.errors}`);
 	}
-	console.log('any-xray config', config);
 
   // Step 3: Create a script snapshot and set up Language Service host
   const host: ts.LanguageServiceHost = {
     getScriptFileNames: () => config.fileNames,
     getScriptVersion: (fileName) => fileVersions[fileName]?.toString() ?? '0',
     getScriptSnapshot: (fileName) => {
-			console.log('any-xray getScriptSnapshot', fileName);
+			// console.log('any-xray getScriptSnapshot', fileName);
 			const snap = (fileSnapshot[fileName]);
 			if (snap) {
 				return snap;
@@ -191,11 +190,21 @@ function setupLanguageService() {
     },
     getCurrentDirectory: () => workspaceFolder,
     getCompilationSettings: () => config.options,
-		getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-		readFile(path, encoding) {
-			// console.log('any-xray readFile', path);
-			return ts.sys.readFile(path, encoding);
+		getDefaultLibFileName: (options) => {
+			// getDefaultLibFilePath returns a path relative to the version of TypeScript that this
+			// extension bundles. When it's distributed, this will not include the various lib.d.ts
+			// files. Presumably these _are_ available in the workspace, so we try to reference those
+			// instead. This feels like maybe not the right way to do this.
+			const initPath = ts.getDefaultLibFilePath(options);
+			const relativePath = initPath.replace(/.*node_modules/, 'node_modules');
+			const libPath = path.join(workspaceFolder, relativePath);
+			console.log('any-xray: changed ', initPath, 'to', libPath);
+			if (!ts.sys.fileExists(libPath)) {
+				console.warn('any-xray: lib file', libPath, 'does not exist');
+			}
+			return libPath;
 		},
+		readFile: ts.sys.readFile,
 		fileExists: ts.sys.fileExists,
 		getDirectories: ts.sys.getDirectories,
 		readDirectory: ts.sys.readDirectory,

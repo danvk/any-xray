@@ -94,6 +94,7 @@ function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 		console.warn('no program');
 		return;
 	}
+	console.log('any-xray program cwd', program.getCurrentDirectory());
 
   const sourceFile = program.getSourceFile(fileName);
   if (!sourceFile) {
@@ -151,6 +152,7 @@ function setupLanguageService() {
     vscode.window.showWarningMessage('No tsconfig.json found in the workspace folder.');
     return;
   }
+	console.log('any-xray workspace:', workspaceFolder, 'tsconfig:', tsConfigPath);
 
   // Step 2: Parse tsconfig.json to get compiler options and file list
 	let config;
@@ -169,12 +171,14 @@ function setupLanguageService() {
 	if (config.errors.length) {
 		vscode.window.showWarningMessage(`tsconfig.json errors ${config.errors}`);
 	}
+	console.log('any-xray config', config);
 
   // Step 3: Create a script snapshot and set up Language Service host
   const host: ts.LanguageServiceHost = {
     getScriptFileNames: () => config.fileNames,
     getScriptVersion: (fileName) => fileVersions[fileName]?.toString() ?? '0',
     getScriptSnapshot: (fileName) => {
+			console.log('any-xray getScriptSnapshot', fileName);
 			const snap = (fileSnapshot[fileName]);
 			if (snap) {
 				return snap;
@@ -188,7 +192,10 @@ function setupLanguageService() {
     getCurrentDirectory: () => workspaceFolder,
     getCompilationSettings: () => config.options,
 		getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-		readFile: ts.sys.readFile,
+		readFile(path, encoding) {
+			// console.log('any-xray readFile', path);
+			return ts.sys.readFile(path, encoding);
+		},
 		fileExists: ts.sys.fileExists,
 		getDirectories: ts.sys.getDirectories,
 		readDirectory: ts.sys.readDirectory,

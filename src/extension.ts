@@ -158,7 +158,9 @@ function setupLanguageService() {
 		config = ts.parseJsonConfigFileContent(
 			ts.parseConfigFileTextToJson(tsConfigPath, fs.readFileSync(tsConfigPath, 'utf8')).config,
 			ts.sys,
-			workspaceFolder
+			workspaceFolder,
+			undefined,
+			tsConfigPath
 		);
 	} catch (e) {
 		vscode.window.showWarningMessage('Failed to load tsconfig.json');
@@ -167,6 +169,7 @@ function setupLanguageService() {
 	if (config.errors.length) {
 		vscode.window.showWarningMessage(`tsconfig.json errors ${config.errors}`);
 	}
+	console.log(config);
 
   // Step 3: Create a script snapshot and set up Language Service host
   const host: ts.LanguageServiceHost = {
@@ -180,13 +183,25 @@ function setupLanguageService() {
       if (fs.existsSync(fileName)) {
         return ts.ScriptSnapshot.fromString(fs.readFileSync(fileName, 'utf8'));
       }
+			console.log('no snapshot for', fileName);
       return undefined;
     },
     getCurrentDirectory: () => workspaceFolder,
     getCompilationSettings: () => config.options,
-    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+    getDefaultLibFileName: (options) => {
+			const ret = ts.getDefaultLibFilePath(options);
+			return ret;
+		},
 		readFile: ts.sys.readFile,
-		fileExists: ts.sys.fileExists,
+		fileExists(path) {
+			const exists = ts.sys.fileExists(path);
+			if (path.includes('jest')) {
+				console.log('fileExists', path, exists);
+			}
+			return exists;
+		},
+		getDirectories: ts.sys.getDirectories,
+		readDirectory: ts.sys.readDirectory,
   };
 
   // Step 4: Create the TypeScript Language Service

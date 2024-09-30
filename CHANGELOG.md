@@ -1,9 +1,11 @@
 # Change Log
 
-All notable changes to the "any-xray" extension will be documented in this file.
+## 0.1.1
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+- Reduce VS Code requirement to support Cursor
 
-## [Unreleased]
+## 0.1.0
 
-- Initial release
+- Initial release ([tweet])
+
+[tweet]: https://twitter.com/danvdk/status/1840509263908831457

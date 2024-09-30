@@ -6,7 +6,7 @@
   "publisher": "danvk",
   "engines": {
     "vscode": "^1.91.0",
-    "cursor": "0.41.2"
+    "cursor": "^0.41.2"
   },
   "categories": [
     "Other"

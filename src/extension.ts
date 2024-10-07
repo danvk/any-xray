@@ -4,7 +4,6 @@ import * as path from 'path';
 import * as fs from 'fs';
 import debounce from 'lodash.debounce';
 
-
 const configurationSection = 'anyXray';
 
 let decorationType: vscode.TextEditorDecorationType;
@@ -37,14 +36,14 @@ export async function activate(context: vscode.ExtensionContext) {
 			// this is fired on every keystroke
 			const {activeTextEditor} = vscode.window;
       if (event.document.languageId === 'typescript' && event.document === activeTextEditor?.document) {
-        findTheAnyDebounced(event.document, activeTextEditor);
+        findTheAnysDebounced(event.document, activeTextEditor);
       }
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
 			const {activeTextEditor} = vscode.window;
       if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
 				// console.log('onDidOpenTextDocument');
-        findTheAnyDebounced(document, activeTextEditor);
+        findTheAnysDebounced(document, activeTextEditor);
       }
     }),
 		vscode.workspace.onDidCloseTextDocument((document) => {
@@ -56,7 +55,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	vscode.window.onDidChangeActiveTextEditor((editor) => {
 		if (editor?.document.languageId === 'typescript') {
 			// console.log("onDidChangeActiveTextEditor");
-			findTheAnyDebounced(editor.document, editor);
+			findTheAnysDebounced(editor.document, editor);
 		}
 	});
 
@@ -92,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	setTimeout(updateVisibleEditors, 0);
 }
 
-function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
+async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 	const fileName = document.uri.fsPath;
   fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
 
@@ -115,15 +114,29 @@ function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 		return;
 	}
 
-  const checker = program.getTypeChecker();
+	// Use this to determine which line are visible
+	// TODO: need to recompute when visible range changes
+	const ranges = editor.visibleRanges;
 
-	const matches: vscode.DecorationOptions[] = [];
-	const errors: vscode.DecorationOptions[] = [];
+	const identifiers: ts.Identifier[] = [];
+
   function visit(node: ts.Node) {
 		if (ts.isImportDeclaration(node)) {
 			return;  // we want no part in these
 		}
     if (ts.isIdentifier(node)) {
+			const start = node.getStart();
+			const end = node.getEnd();
+			const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
+			// TODO: what are the other ranges?
+			if (ranges[0].contains(range)) {
+				identifiers.push(node);
+			}
+		}
+
+    node.forEachChild(visit);
+  }
+			/*
 			const type = checker.getTypeAtLocation(node);
 			const typeString = checker.typeToString(type);
 
@@ -137,19 +150,46 @@ function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 						errors.push({range});
 					}
 				} else {
+					identifiers.push(node);
+					const txt = node.getText();
 					matches.push({range});
+					const startMs = Date.now();
+					quickInfoRequest(document, document.positionAt(start + 1)).then((info) => {
+						const elapsedMs = Date.now() - startMs;
+						console.log(txt, '->', info, elapsedMs, 'ms');
+						if (info?.body?.displayString.endsWith(': any')) {
+
+						}
+					});
 				}
 			}
 		}
-    node.forEachChild(visit);
-  }
-
+		*/
   visit(sourceFile);
-	editor.setDecorations(decorationType, matches);
-	editor.setDecorations(errorType, errors);
+	console.log('checking quickinfo for', identifiers.length, 'identifiers');
+	const startMs = Date.now();
+	const anyRanges = (await Promise.all(identifiers.map(async (node) => {
+		const start = node.getStart();
+		const end = node.getEnd();
+		// const startMs = Date.now();
+		const info = await quickInfoRequest(document, document.positionAt(start + 1));
+		// const elapsedMs = Date.now() - startMs;
+		// console.log(node.getText(), '->', info?.body?.displayString, elapsedMs, 'ms');
+		// TODO: test this / make it more robust
+		if (info?.body?.displayString.match(/[^)]: any$/)) {
+			const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
+			return range;
+		}
+	}))).filter(x => !!x);
+	console.log('checked quickinfo for ', identifiers.length, 'identifers in', Date.now() - startMs, 'ms');
+
+	// const matches: vscode.DecorationOptions[] = [];
+	// const errors: vscode.DecorationOptions[] = [];
+	editor.setDecorations(decorationType, anyRanges);
+	// editor.setDecorations(errorType, errors);
 }
 
-const findTheAnyDebounced = debounce(findTheAnys, 250);
+const findTheAnysDebounced = debounce(findTheAnys, 250);
 
 function loadConfiguration() {
 	console.log('any-xray: loading configuration');
@@ -245,4 +285,21 @@ function setupLanguageService() {
 
   // Step 4: Create the TypeScript Language Service
   languageService = ts.createLanguageService(host, ts.createDocumentRegistry());
+}
+
+type Model = vscode.TextDocument;
+
+/** Leverages the `tsserver` protocol to try to get the type info at the given `position`. */
+async function quickInfoRequest(model: Model, position: vscode.Position) {
+  const { scheme, fsPath, authority, path } = model.uri;
+	const req: ts.server.protocol.FileLocationRequestArgs = {
+		file: scheme === 'file' ? fsPath : `^/${scheme}/${authority || 'ts-nul-authority'}/${path.replace(/^\//, '')}`,
+		line: position.line + 1,
+		offset: position.character,
+	};
+  return await vscode.commands.executeCommand<ts.server.protocol.QuickInfoResponse | undefined>(
+    "typescript.tsserverRequest",
+    "quickinfo",
+    req
+  );
 }

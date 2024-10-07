@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
 import * as ts from 'typescript';
-import * as path from 'path';
-import * as fs from 'fs';
 import debounce from 'lodash.debounce';
 
 const configurationSection = 'anyXray';
@@ -22,7 +20,14 @@ const fallbackDecorationStyle: vscode.DecorationRenderOptions = {
 	color: "red"
 };
 
-let fileVersions: { [fileName: string]: number } = {};
+interface DetectedAnys {
+	generation: number;
+	anyRanges: vscode.Range[];
+	checkedRanges: vscode.Range[];
+}
+
+const fileVersions: { [fileName: string]: number } = {};
+const detectedAnys: { [fileName: string]: DetectedAnys } = {};
 
 export async function activate(context: vscode.ExtensionContext) {
 	console.log('any-xray: activate');
@@ -37,6 +42,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
 				const fileName = document.uri.fsPath;
 				fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
+				delete detectedAnys[fileName];  // invalidate cache
         findTheAnysDebounced(event.document, activeTextEditor);
       }
     }),
@@ -61,6 +67,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
 		// console.log('scroll!', event.visibleRanges);
+		if (event.textEditor?.document.languageId === 'typescript') {
+			findTheAnysDebounced(event.textEditor.document, event.textEditor);
+		}
 	});
 
 	const updateVisibleEditors = () => {
@@ -98,19 +107,25 @@ export async function activate(context: vscode.ExtensionContext) {
 async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 	const fileName = document.uri.fsPath;
 	const generation = fileVersions[fileName] || 0;
-	const parseStartMs = Date.now();
-	const program = ts.createProgram([fileName], ts.getDefaultCompilerOptions());
-  const sourceFile = program.getSourceFile(fileName);
-	console.log('parsed', fileName, 'in', Date.now() - parseStartMs, 'ms');
-	// TODO: cache generation -> sourceFile	mapping
-  if (!sourceFile) {
-		console.warn('no source file');
-		return;
-	}
 
+	// Check if we've already checked the visible range.
 	// Use this to determine which lines are visible
 	// TODO: need to recompute when visible range changes
-	const ranges = editor.visibleRanges;
+	// TODO: what are the other ranges?
+	const visibleRange = editor.visibleRanges[0];
+	const prev = detectedAnys[fileName];
+	if (prev?.generation === generation) {
+		if (prev.checkedRanges.some(range => range.contains(visibleRange))) {
+			console.log('already checked visible range');
+			editor.setDecorations(decorationType, prev.anyRanges);
+			return;
+		}
+	}
+
+	const parseStartMs = Date.now();
+	const sourceFile = ts.createSourceFile(fileName, document.getText(), ts.ScriptTarget.Latest, false);
+	console.log('parsed', fileName, 'in', Date.now() - parseStartMs, 'ms');
+	// TODO: cache generation -> sourceFile	mapping for active editor
 
 	const identifiers: ts.Identifier[] = [];
 
@@ -123,13 +138,15 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 			const start = node.getStart(sourceFile);
 			const end = node.getEnd();
 			const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
-			// TODO: what are the other ranges?
-			if (ranges[0].contains(range)) {
+
+			// TODO: make sure that this range hasn't already been checked.
+			if (visibleRange.contains(range)) {
 				identifiers.push(node);
 			}
 		}
 
-    node.forEachChild(visit);
+		// TODO: only descend into visible nodes
+		ts.forEachChild(node, visit);
   }
 
   visit(sourceFile);
@@ -156,6 +173,19 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	if (generation !== newGeneration) {
 		console.log('ignoring stale quickinfo');
 		return;
+	}
+
+	const oldDetected = detectedAnys[fileName];
+	if (!oldDetected || oldDetected.generation !== generation) {
+		detectedAnys[fileName] = {
+			generation,
+			anyRanges: anyRanges,
+			checkedRanges: [visibleRange],
+		};
+	} else {
+		oldDetected.anyRanges = oldDetected.anyRanges.concat(anyRanges);
+		// TODO: merge ranges
+		oldDetected.checkedRanges.push(visibleRange);
 	}
 
 	editor.setDecorations(decorationType, anyRanges);

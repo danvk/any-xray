@@ -141,7 +141,7 @@ async function findTheAnys(
   // TODO: is jsx harmful for non-TSX?
   const ast = parse(document.getText(), {
     sourceType: "module",
-    plugins: ["typescript", "jsx"],
+    plugins: ["typescript", ...(fileName.endsWith('tsx') ? ["jsx" as const] : [])],
   });
   const elapsedMs = Date.now() - parseStartMs;
   if (elapsedMs > 50) {

@@ -2,17 +2,11 @@ import * as vscode from 'vscode';
 import * as ts from 'typescript';
 import debounce from 'lodash.debounce';
 import { Interval, IntervalSet } from './interval-set';
+import { isAny } from './is-any';
 
 const configurationSection = 'anyXray';
 
 let decorationType: vscode.TextEditorDecorationType;
-let showErrors = false;
-
-const errorType = vscode.window.createTextEditorDecorationType({
-  backgroundColor: 'rgba(255,255,0,0.25)',
-	borderRadius: '3px',
-	border: 'solid 2px rgba(255,255,0)',
-});
 
 const fallbackDecorationStyle: vscode.DecorationRenderOptions = {
 	backgroundColor: "rgba(255,0,0,0.1)",
@@ -70,6 +64,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
 		// console.log('scroll!', event.visibleRanges);
 		if (event.textEditor?.document.languageId === 'typescript') {
+			// TODO: debouncing is only needed for getting quickinfo, not setting spans from cache
 			findTheAnysDebounced(event.textEditor.document, event.textEditor);
 		}
 	});
@@ -111,10 +106,7 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	const generation = fileVersions[fileName] || 0;
 
 	// Check if we've already checked the visible range.
-	// Use this to determine which lines are visible
-	// TODO: need to recompute when visible range changes
-	// TODO: what are the other ranges?
-	const visibleRange = editor.visibleRanges[0];
+	const visibleRange = editor.visibleRanges[0];	// TODO: what are the other ranges?
 	const visibleIv: Interval = [visibleRange.start.line, visibleRange.end.line];
 	const prev = detectedAnys[fileName];
 	let ivsToCheck: IntervalSet;
@@ -155,19 +147,16 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
   }
 
   visit(sourceFile);
-	console.log('checking quickinfo for', identifiers.length, 'identifiers in', ivsToCheck.getIntervals());
+	console.log('checking quickinfo for', identifiers.length, 'identifiers in', JSON.stringify(ivsToCheck.getIntervals()));
 	const startMs = Date.now();
 	// TODO: batch these to let the user get some interactions in
 	const anyRanges = (await Promise.all(identifiers.map(async (node) => {
 		// TODO: why does this need sourceFile? getFullStart() does not.
 		const start = node.getStart(sourceFile);
 		const end = node.getEnd();
-		// const startMs = Date.now();
 		const info = await quickInfoRequest(document, document.positionAt(start + 1));
-		// const elapsedMs = Date.now() - startMs;
 		// console.log(node.getText(), '->', info?.body?.displayString, elapsedMs, 'ms');
-		// TODO: test this / make it more robust
-		if (info?.body?.displayString.match(/[^)]: any$/)) {
+		if (isAny(info?.body?.displayString ?? '')) {
 			const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
 			return range;
 		}
@@ -211,8 +200,6 @@ function loadConfiguration() {
 		vscode.window.showErrorMessage('Invalid anyXray.anyStyle; falling back to default.');
 		decorationType = vscode.window.createTextEditorDecorationType(fallbackDecorationStyle);
 	}
-
-	showErrors = config.get('renderErrorAnys') as boolean;
 }
 
 export function deactivate() {

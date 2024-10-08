@@ -45,11 +45,6 @@
           "default": null,
           "description": "camelCased CSS styles to apply to 'any' types",
           "editPresentation": "multilineText"
-        },
-        "anyXray.renderErrorAnys": {
-          "type": "boolean",
-          "default": false,
-          "description": "Render 'any' types coming from errors; this is mostly useful for debugging."
         }
       }
     }

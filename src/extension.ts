@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import type * as ts from 'typescript';
+import {parse} from '@babel/parser';
+import traverse from '@babel/traverse';
+import {Identifier, SourceLocation} from '@babel/types';
 import debounce from 'lodash.debounce';
 import { Interval, IntervalSet } from './interval-set';
 import { isAny } from './is-any';
@@ -29,8 +32,6 @@ export async function activate(context: vscode.ExtensionContext) {
 	console.log('any-xray: activate');
 	loadConfiguration();
 
-	const tsapi = await import('typescript');
-
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
 			// this is fired on every keystroke
@@ -41,14 +42,14 @@ export async function activate(context: vscode.ExtensionContext) {
 				const fileName = document.uri.fsPath;
 				fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
 				delete detectedAnys[fileName];  // invalidate cache
-        findTheAnysDebounced(tsapi, event.document, activeTextEditor);
+        findTheAnysDebounced(event.document, activeTextEditor);
       }
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
 			const {activeTextEditor} = vscode.window;
       if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
 				// console.log('onDidOpenTextDocument');
-        findTheAnysDebounced(tsapi, document, activeTextEditor);
+        findTheAnysDebounced(document, activeTextEditor);
       }
     }),
 		vscode.workspace.onDidCloseTextDocument((document) => {
@@ -59,7 +60,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	vscode.window.onDidChangeActiveTextEditor((editor) => {
 		if (editor?.document.languageId === 'typescript') {
 			// console.log("onDidChangeActiveTextEditor");
-			findTheAnysDebounced(tsapi, editor.document, editor);
+			findTheAnysDebounced(editor.document, editor);
 		}
 	});
 
@@ -67,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		// console.log('scroll!', event.visibleRanges);
 		if (event.textEditor?.document.languageId === 'typescript') {
 			// TODO: debouncing is only needed for getting quickinfo, not setting spans from cache
-			findTheAnysDebounced(tsapi, event.textEditor.document, event.textEditor);
+			findTheAnysDebounced(event.textEditor.document, event.textEditor);
 		}
 	});
 
@@ -87,7 +88,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.visibleTextEditors.forEach((editor) => {
 			if (editor.document.languageId === 'typescript' && visibleUris.has(editor.document.uri.fsPath)) {
 				// console.log('initial pass for', editor.document.uri.fsPath);
-				findTheAnys(tsapi, editor.document, editor);
+				findTheAnys(editor.document, editor);
 			}
 		});
 	};
@@ -100,10 +101,10 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
 	// TODO: is there some kind of "idle" event I can use instead of this?
-	setTimeout(updateVisibleEditors, 0);
+	// setTimeout(updateVisibleEditors, 0);
 }
 
-async function findTheAnys(tsapi: typeof ts, document: vscode.TextDocument, editor: vscode.TextEditor) {
+async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
 	const fileName = document.uri.fsPath;
 	const generation = fileVersions[fileName] || 0;
 
@@ -124,42 +125,45 @@ async function findTheAnys(tsapi: typeof ts, document: vscode.TextDocument, edit
 	}
 
 	const parseStartMs = Date.now();
-	const sourceFile = tsapi.createSourceFile('/any-xray/' + fileName, document.getText(), tsapi.ScriptTarget.Latest, false);
+	const ast = parse(document.getText(), {sourceType: 'module', plugins: ['typescript']});
+	console.log(ast);
 	console.log('parsed', fileName, 'in', Date.now() - parseStartMs, 'ms');
-	// TODO: cache generation -> sourceFile	mapping for active editor
-
-	const identifiers: ts.Identifier[] = [];
-
-  function visit(node: ts.Node) {
-		if (tsapi.isImportDeclaration(node)) {
-			return;  // we want no part in these
-		}
-		// TODO: why does this need sourceFile? getFullStart() does not.
-		const start = node.getStart(sourceFile);
-		const end = node.getEnd();
-		const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
-		const nodeIv: Interval = [range.start.line, range.end.line];
-		if (!ivsToCheck.intersects(nodeIv)) {
-			return;
-		}
-    if (tsapi.isIdentifier(node)) {
+	const identifiers: Identifier[] = [];
+	traverse(ast, {
+		Identifier(path) {
+			const node = path.node;
+			// console.log(node.name);
+			if (!node.loc) {
+				return;
+			}
+			// TODO: can an Identifier span multiple lines?
+			const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
+			if (!ivsToCheck.intersects(nodeIv)) {
+				return;
+			}
 			identifiers.push(node);
+			// node.start / end = character offsets
+			// node.loc = {start: {line, column, index}, end: {line, column, index}}
+			// column might be zero-based
+			// line is 1-based
 		}
-		tsapi.forEachChild(node, visit);
-  }
+	});
+	// TODO: cache generation -> AST	mapping for active editor
 
-  visit(sourceFile);
 	console.log('checking quickinfo for', identifiers.length, 'identifiers in', JSON.stringify(ivsToCheck.getIntervals()));
 	const startMs = Date.now();
 	// TODO: batch these to let the user get some interactions in
 	const anyRanges = (await Promise.all(identifiers.map(async (node) => {
-		// TODO: why does this need sourceFile? getFullStart() does not.
-		const start = node.getStart(sourceFile);
-		const end = node.getEnd();
-		const info = await quickInfoRequest(document, document.positionAt(start + 1));
-		// console.log(node.getText(sourceFile), '->', info?.body?.displayString);
+		const loc = node.loc!;
+		const {start} = loc;
+		const pos = new vscode.Position(start.line, start.column + 1);  // may need start.column+1
+		const info = await quickInfoRequest(document, pos);
+		console.log(node.name, '->', info?.body?.displayString);
 		if (isAny(info?.body?.displayString ?? '')) {
-			const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
+			const {end} = loc;
+			const startPos = new vscode.Position(start.line, start.column);
+			const endPos = new vscode.Position(end.line, end.column);
+			const range = new vscode.Range(startPos, endPos);
 			return range;
 		}
 	}))).filter(x => !!x);

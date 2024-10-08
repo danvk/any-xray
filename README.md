@@ -23,14 +23,16 @@ Change the way that symbols with `any` types are rendered. You can pass in anyth
 }
 ```
 
-`anyXray.renderErrorAnys`
-
-When there are errors, the TypeScript language service reports special "error" `any` types. By default, any-xray doesn't render these. But error `any`s can lead to non-error `any`s, so they can be helpful for tracking down why this extension is reporting spurious `any` types. Flip this on to help debug.
-
 ## Related work
 
 - If you want `any` types to be compiler warnings, check out [type-coverage].
 - You may also be interested in typescript-eslint's [no-unsafe-assignment] rule, which is part of the [recommended-type-checked] configuration.
+
+## How this works
+
+This extension piggybacks on the "quickinfo" (hovertext) provided by the TypeScript Language Service in VS Code. It parses your TypeScript file and asks VS Code for quickinfo on all the identifiers in the visible range of active editors. If these end with something like ": any", then it colors them red.
+
+There are a few situations in which this will highlight identifiers that are safe, see [#1](https://github.com/danvk/any-xray/issues/1).
 
 [type-coverage]: https://github.com/plantain-00/type-coverage
 [no-unsafe-assignment]: https://typescript-eslint.io/rules/no-unsafe-assignment/

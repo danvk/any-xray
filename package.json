@@ -2,8 +2,9 @@
   "name": "any-xray",
   "displayName": "any-xray",
   "description": "X-Ray vision for TypeScript 'any' types",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "danvk",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.91.0"
   },
@@ -11,29 +12,14 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:typescript"
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact"
   ],
   "main": "./out/extension.js",
   "repository": "https://github.com/danvk/any-xray.git",
   "author": "Dan Vanderkam <danvdk@gmail.com>",
   "license": "Apache-2.0",
   "contributes": {
-    "languages": [
-      {
-        "id": "typescript",
-        "extensions": [
-          ".ts",
-          ".tsx"
-        ],
-        "aliases": [
-          "TypeScript",
-          "ts"
-        ]
-      }
-    ],
-    "grammars": [],
-    "commands": [],
-    "keybindings": [],
     "configuration": {
       "title": "Any X-Ray Glasses",
       "properties": {
@@ -45,11 +31,6 @@
           "default": null,
           "description": "camelCased CSS styles to apply to 'any' types",
           "editPresentation": "multilineText"
-        },
-        "anyXray.renderErrorAnys": {
-          "type": "boolean",
-          "default": false,
-          "description": "Render 'any' types coming from errors; this is mostly useful for debugging."
         }
       }
     }
@@ -60,9 +41,12 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "format": "prettier src --write",
+    "format:check": "prettier src --check"
   },
   "devDependencies": {
+    "@types/babel__traverse": "^7.20.6",
     "@types/lodash.debounce": "^4.0.9",
     "@types/mocha": "^10.0.7",
     "@types/node": "20.x",
@@ -72,10 +56,15 @@
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
     "@vscode/vsce": "^3.1.0",
-    "eslint": "^9.9.1"
+    "eslint": "^9.9.1",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
   },
   "dependencies": {
-    "lodash.debounce": "^4.0.8",
-    "typescript": "^5.6.2"
+    "@babel/parser": "^7.25.7",
+    "@babel/traverse": "^7.25.7",
+    "interval-operations": "^2.0.0",
+    "lodash.debounce": "^4.0.8"
   }
 }

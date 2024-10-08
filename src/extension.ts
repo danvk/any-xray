@@ -1,248 +1,280 @@
-import * as vscode from 'vscode';
-import * as ts from 'typescript';
-import * as path from 'path';
-import * as fs from 'fs';
-import debounce from 'lodash.debounce';
+import * as vscode from "vscode";
+import type * as ts from "typescript";
+import { parse } from "@babel/parser";
+import traverse from "@babel/traverse";
+import { Identifier } from "@babel/types";
+import debounce from "lodash.debounce";
+import { Interval, IntervalSet } from "./interval-set";
+import { isAny } from "./is-any";
 
-
-const configurationSection = 'anyXray';
+const configurationSection = "anyXray";
 
 let decorationType: vscode.TextEditorDecorationType;
-let showErrors = false;
-
-const errorType = vscode.window.createTextEditorDecorationType({
-  backgroundColor: 'rgba(255,255,0,0.25)',
-	borderRadius: '3px',
-	border: 'solid 2px rgba(255,255,0)',
-});
 
 const fallbackDecorationStyle: vscode.DecorationRenderOptions = {
-	backgroundColor: "rgba(255,0,0,0.1)",
-	borderRadius: "3px",
-	border: "solid 1px rgba(255,0,0)",
-	color: "red"
+  backgroundColor: "rgba(255,0,0,0.1)",
+  borderRadius: "3px",
+  border: "solid 1px rgba(255,0,0)",
+  color: "red",
 };
 
-let languageService: ts.LanguageService;
-let fileVersions: { [fileName: string]: number } = {};
-let fileSnapshot: { [fileName: string]: ts.IScriptSnapshot } = {};
+interface DetectedAnys {
+  generation: number;
+  anyRanges: vscode.Range[];
+  /** IntervalSet of line numbers */
+  checkedRanges: IntervalSet;
+}
+
+function isTypeScript(document: vscode.TextDocument) {
+  return (
+    document.languageId === "typescript" ||
+    document.languageId === "typescriptreact"
+  );
+}
+
+const fileVersions: { [fileName: string]: number } = {};
+const detectedAnys: { [fileName: string]: DetectedAnys } = {};
 
 export async function activate(context: vscode.ExtensionContext) {
-	console.log('any-xray: activate');
-	loadConfiguration();
-  setupLanguageService();
+  console.log("any-xray: activate");
+  loadConfiguration();
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
-			// this is fired on every keystroke
-			const {activeTextEditor} = vscode.window;
-      if (event.document.languageId === 'typescript' && event.document === activeTextEditor?.document) {
-        findTheAnyDebounced(event.document, activeTextEditor);
+      // this is fired on every keystroke
+      const { activeTextEditor } = vscode.window;
+      const { document } = event;
+      console.log(document.fileName, document.languageId);
+      if (isTypeScript(document) && document === activeTextEditor?.document) {
+        const fileName = document.uri.fsPath;
+        fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
+        delete detectedAnys[fileName]; // invalidate cache
+        findTheAnysDebounced(event.document, activeTextEditor);
       }
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
-			const {activeTextEditor} = vscode.window;
-      if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
-				// console.log('onDidOpenTextDocument');
-        findTheAnyDebounced(document, activeTextEditor);
+      const { activeTextEditor } = vscode.window;
+      if (isTypeScript(document) && document === activeTextEditor?.document) {
+        // console.log('onDidOpenTextDocument');
+        findTheAnysDebounced(document, activeTextEditor);
       }
     }),
-		vscode.workspace.onDidCloseTextDocument((document) => {
-			delete fileVersions[document.uri.fsPath];
-			delete fileSnapshot[document.uri.fsPath];
-		}),
+    vscode.workspace.onDidCloseTextDocument((document) => {
+      delete fileVersions[document.uri.fsPath];
+    }),
   );
 
-	vscode.window.onDidChangeActiveTextEditor((editor) => {
-		if (editor?.document.languageId === 'typescript') {
-			// console.log("onDidChangeActiveTextEditor");
-			findTheAnyDebounced(editor.document, editor);
-		}
-	});
-
-	const updateVisibleEditors = () => {
-		const visibleUris = new Set<string>();
-		for (const group of vscode.window.tabGroups.all) {
-			const {activeTab} = group;
-			if (!activeTab) {
-				return;
-			}
-			const {input} = activeTab;
-			if (input && typeof input === 'object' && 'uri' in input) {
-				const textInput = input as vscode.TabInputText;
-				visibleUris.add(textInput.uri.fsPath);
-			}
-		}
-		vscode.window.visibleTextEditors.forEach((editor) => {
-			if (editor.document.languageId === 'typescript' && visibleUris.has(editor.document.uri.fsPath)) {
-				// console.log('initial pass for', editor.document.uri.fsPath);
-				findTheAnys(editor.document, editor);
-			}
-		});
-	};
-
-	vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration(configurationSection)) {
-      loadConfiguration();
-			updateVisibleEditors();
+  vscode.window.onDidChangeActiveTextEditor((editor) => {
+    if (editor && isTypeScript(editor.document)) {
+      // console.log("onDidChangeActiveTextEditor");
+      findTheAnysDebounced(editor.document, editor);
     }
   });
 
-	// TODO: is there some kind of "idle" event I can use instead of this?
-	setTimeout(updateVisibleEditors, 0);
+  vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
+    // console.log('scroll!', event.visibleRanges);
+    if (event.textEditor && isTypeScript(event.textEditor.document)) {
+      // TODO: debouncing is only needed for getting quickinfo, not setting spans from cache
+      findTheAnysDebounced(event.textEditor.document, event.textEditor);
+    }
+  });
+
+  const updateVisibleEditors = () => {
+    const visibleUris = new Set<string>();
+    for (const group of vscode.window.tabGroups.all) {
+      const { activeTab } = group;
+      if (!activeTab) {
+        return;
+      }
+      const { input } = activeTab;
+      if (input && typeof input === "object" && "uri" in input) {
+        const textInput = input as vscode.TabInputText;
+        visibleUris.add(textInput.uri.fsPath);
+      }
+    }
+    vscode.window.visibleTextEditors.forEach((editor) => {
+      if (
+        isTypeScript(editor.document) &&
+        visibleUris.has(editor.document.uri.fsPath)
+      ) {
+        // console.log('initial pass for', editor.document.uri.fsPath);
+        findTheAnys(editor.document, editor);
+      }
+    });
+  };
+
+  vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration(configurationSection)) {
+      loadConfiguration();
+      updateVisibleEditors();
+    }
+  });
+
+  // TODO: is there some kind of "idle" event I can use instead of this?
+  // setTimeout(updateVisibleEditors, 1000);
 }
 
-function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
-	const fileName = document.uri.fsPath;
-  fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
+async function findTheAnys(
+  document: vscode.TextDocument,
+  editor: vscode.TextEditor,
+) {
+  const fileName = document.uri.fsPath;
+  const generation = fileVersions[fileName] || 0;
 
-  const sourceCode = document.getText();
-  const scriptSnapshot = ts.ScriptSnapshot.fromString(sourceCode);
-	// TODO: purge this after the file is saved?
-	fileSnapshot[fileName] = scriptSnapshot;
-
-  // Step 6: Analyze the file using the Language Service
-  const program = languageService.getProgram();
-  if (!program) {
-		console.warn('no program');
-		return;
-	}
-	console.log('any-xray program cwd', program.getCurrentDirectory());
-
-  const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) {
-		console.warn('no source file');
-		return;
-	}
-
-  const checker = program.getTypeChecker();
-
-	const matches: vscode.DecorationOptions[] = [];
-	const errors: vscode.DecorationOptions[] = [];
-  function visit(node: ts.Node) {
-		if (ts.isImportDeclaration(node)) {
-			return;  // we want no part in these
-		}
-    if (ts.isIdentifier(node)) {
-			const type = checker.getTypeAtLocation(node);
-			const typeString = checker.typeToString(type);
-
-			// Check if the type is inferred as 'any'
-			if (typeString === 'any' && !ts.isTypePredicateNode(node.parent)) {
-				const start = node.getStart();
-				const end = node.getEnd();
-				const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
-				if (type.intrinsicName === 'error') {
-					if (showErrors) {
-						errors.push({range});
-					}
-				} else {
-					matches.push({range});
-				}
-			}
-		}
-    node.forEachChild(visit);
+  // Check if we've already checked the visible range.
+  const visibleRange = editor.visibleRanges[0]; // TODO: what are the other ranges?
+  const visibleIv: Interval = [visibleRange.start.line, visibleRange.end.line];
+  const prev = detectedAnys[fileName];
+  let ivsToCheck: IntervalSet;
+  if (prev?.generation === generation) {
+    ivsToCheck = prev.checkedRanges.uncovered(visibleIv);
+  } else {
+    ivsToCheck = new IntervalSet([visibleIv]);
+  }
+  if (ivsToCheck.isEmpty()) {
+    // console.log('already checked visible range');
+    editor.setDecorations(decorationType, prev.anyRanges);
+    return;
   }
 
-  visit(sourceFile);
-	editor.setDecorations(decorationType, matches);
-	editor.setDecorations(errorType, errors);
+  const parseStartMs = Date.now();
+  // TODO: is jsx harmful for non-TSX?
+  const ast = parse(document.getText(), {
+    sourceType: "module",
+    plugins: ["typescript", ...(fileName.endsWith('tsx') ? ["jsx" as const] : [])],
+  });
+  const elapsedMs = Date.now() - parseStartMs;
+  if (elapsedMs > 50) {
+    console.log("parsed", fileName, "in", elapsedMs, "ms");
+  }
+  const identifiers: Identifier[] = [];
+  traverse(ast, {
+    Identifier(path) {
+      const node = path.node;
+      // console.log(node.name);
+      if (!node.loc) {
+        return;
+      }
+      // TODO: can an Identifier span multiple lines?
+      const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
+      if (!ivsToCheck.intersects(nodeIv)) {
+        return;
+      }
+      identifiers.push(node);
+    },
+  });
+  // TODO: cache generation -> AST mapping for active editor
+
+  // console.log('checking quickinfo for', identifiers.length, 'identifiers in', JSON.stringify(ivsToCheck.getIntervals()));
+  const startMs = Date.now();
+  // TODO: batch these to let the user get some interactions in
+  const anyRanges = (
+    await Promise.all(
+      identifiers.map(async (node) => {
+        const loc = node.loc!;
+        const { start } = loc;
+        const pos = new vscode.Position(start.line, start.column + 1); // may need start.column+1
+        const info = await quickInfoRequest(document, pos);
+        if (isAny(info?.body?.displayString ?? "")) {
+          console.log(
+            "found an any",
+            node.name,
+            "->",
+            info?.body?.displayString,
+          );
+          const { end } = loc;
+          const startPos = new vscode.Position(start.line - 1, start.column);
+          const endPos = new vscode.Position(end.line - 1, end.column);
+          const range = new vscode.Range(startPos, endPos);
+          return range;
+        }
+      }),
+    )
+  ).filter((x) => !!x);
+  console.log(
+    "checked quickinfo for ",
+    identifiers.length,
+    "identifers in",
+    JSON.stringify(ivsToCheck.getIntervals()),
+    "in",
+    Date.now() - startMs,
+    "ms",
+  );
+
+  const newGeneration = fileVersions[fileName] || 0;
+  if (generation !== newGeneration) {
+    console.log("ignoring stale quickinfo");
+    return;
+  }
+
+  const oldDetected = detectedAnys[fileName];
+  let anyRangesToSet;
+  if (!oldDetected || oldDetected.generation !== generation) {
+    // console.log('setting new anyRanges', anyRanges.length);
+    detectedAnys[fileName] = {
+      generation,
+      anyRanges: anyRanges,
+      checkedRanges: new IntervalSet([visibleIv]),
+    };
+    anyRangesToSet = anyRanges;
+  } else {
+    // console.log('concatenating to old anyRanges', oldDetected.anyRanges.length, '+', anyRanges.length);
+    oldDetected.anyRanges = anyRangesToSet =
+      oldDetected.anyRanges.concat(anyRanges);
+    oldDetected.checkedRanges.add(visibleIv);
+  }
+
+  editor.setDecorations(decorationType, anyRangesToSet);
+  // editor.setDecorations(errorType, errors);
 }
 
-const findTheAnyDebounced = debounce(findTheAnys, 250);
+const findTheAnysDebounced = debounce(findTheAnys, 250);
 
 function loadConfiguration() {
-	console.log('any-xray: loading configuration');
-	const config = vscode.workspace.getConfiguration(configurationSection);
-	const configStyle = config.get('anyStyle') ?? fallbackDecorationStyle as vscode.DecorationRenderOptions;
-	if (decorationType) {
-		decorationType.dispose();
-	}
-	try {
-		decorationType = vscode.window.createTextEditorDecorationType(configStyle);
-	} catch (e) {
-		vscode.window.showErrorMessage('Invalid anyXray.anyStyle; falling back to default.');
-		decorationType = vscode.window.createTextEditorDecorationType(fallbackDecorationStyle);
-	}
-
-	showErrors = config.get('renderErrorAnys') as boolean;
+  const config = vscode.workspace.getConfiguration(configurationSection);
+  const configStyle =
+    config.get("anyStyle") ??
+    (fallbackDecorationStyle as vscode.DecorationRenderOptions);
+  if (decorationType) {
+    decorationType.dispose();
+  }
+  try {
+    decorationType = vscode.window.createTextEditorDecorationType(configStyle);
+  } catch (e) {
+    vscode.window.showErrorMessage(
+      "Invalid anyXray.anyStyle; falling back to default.",
+    );
+    decorationType = vscode.window.createTextEditorDecorationType(
+      fallbackDecorationStyle,
+    );
+  }
 }
 
 export function deactivate() {
-	console.log('deactivate');
+  for (const key of Object.keys(detectedAnys)) {
+    delete detectedAnys[key];
+  }
+  for (const key of Object.keys(fileVersions)) {
+    delete fileVersions[key];
+  }
 }
 
-function setupLanguageService() {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-  if (!workspaceFolder) {
-    vscode.window.showErrorMessage('No workspace folder found.');
-    return;
-  }
-
-  const tsConfigPath = path.join(workspaceFolder, 'tsconfig.json');
-  if (!fs.existsSync(tsConfigPath)) {
-    vscode.window.showWarningMessage('No tsconfig.json found in the workspace folder.');
-    return;
-  }
-	console.log('any-xray workspace:', workspaceFolder, 'tsconfig:', tsConfigPath);
-
-  // Step 2: Parse tsconfig.json to get compiler options and file list
-	let config;
-	try {
-		config = ts.parseJsonConfigFileContent(
-			ts.parseConfigFileTextToJson(tsConfigPath, fs.readFileSync(tsConfigPath, 'utf8')).config,
-			ts.sys,
-			workspaceFolder,
-			undefined,
-			tsConfigPath
-		);
-	} catch (e) {
-		vscode.window.showWarningMessage('Failed to load tsconfig.json');
-		return;
-	}
-	if (config.errors.length) {
-		vscode.window.showWarningMessage(`tsconfig.json errors ${config.errors}`);
-	}
-
-  // Step 3: Create a script snapshot and set up Language Service host
-  const host: ts.LanguageServiceHost = {
-    getScriptFileNames: () => config.fileNames,
-    getScriptVersion: (fileName) => fileVersions[fileName]?.toString() ?? '0',
-    getScriptSnapshot: (fileName) => {
-			// console.log('any-xray getScriptSnapshot', fileName);
-			const snap = (fileSnapshot[fileName]);
-			if (snap) {
-				return snap;
-			}
-      if (fs.existsSync(fileName)) {
-        return ts.ScriptSnapshot.fromString(fs.readFileSync(fileName, 'utf8'));
-      }
-			console.log('no snapshot for', fileName);
-      return undefined;
-    },
-    getCurrentDirectory: () => workspaceFolder,
-    getCompilationSettings: () => config.options,
-		getDefaultLibFileName: (options) => {
-			// getDefaultLibFilePath returns a path relative to the version of TypeScript that this
-			// extension bundles. When it's distributed, this will not include the various lib.d.ts
-			// files. Presumably these _are_ available in the workspace, so we try to reference those
-			// instead. This feels like maybe not the right way to do this.
-			const initPath = ts.getDefaultLibFilePath(options);
-			const relativePath = initPath.replace(/.*node_modules/, 'node_modules');
-			const libPath = path.join(workspaceFolder, relativePath);
-			console.log('any-xray: changed ', initPath, 'to', libPath);
-			if (!ts.sys.fileExists(libPath)) {
-				console.warn('any-xray: lib file', libPath, 'does not exist');
-			}
-			return libPath;
-		},
-		readFile: ts.sys.readFile,
-		fileExists: ts.sys.fileExists,
-		getDirectories: ts.sys.getDirectories,
-		readDirectory: ts.sys.readDirectory,
-		directoryExists: ts.sys.directoryExists,
+// See https://github.com/orta/vscode-twoslash-queries/blob/4a564ada9543517ea8419896637c737229109ac5/src/helpers.ts#L6-L18
+/** Leverages the `tsserver` protocol to try to get the type info at the given `position`. */
+async function quickInfoRequest(
+  doc: vscode.TextDocument,
+  position: vscode.Position,
+) {
+  const { scheme, fsPath, authority, path } = doc.uri;
+  const req: ts.server.protocol.FileLocationRequestArgs = {
+    file:
+      scheme === "file"
+        ? fsPath
+        : `^/${scheme}/${authority || "ts-nul-authority"}/${path.replace(/^\//, "")}`,
+    line: position.line,
+    offset: position.character,
   };
-
-  // Step 4: Create the TypeScript Language Service
-  languageService = ts.createLanguageService(host, ts.createDocumentRegistry());
+  return vscode.commands.executeCommand<
+    ts.server.protocol.QuickInfoResponse | undefined
+  >("typescript.tsserverRequest", "quickinfo", req);
 }

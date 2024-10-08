@@ -122,7 +122,7 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	}
 
 	const parseStartMs = Date.now();
-	const sourceFile = ts.createSourceFile(fileName, document.getText(), ts.ScriptTarget.Latest, false);
+	const sourceFile = ts.createSourceFile('/any-xray/' + fileName, document.getText(), ts.ScriptTarget.Latest, false);
 	console.log('parsed', fileName, 'in', Date.now() - parseStartMs, 'ms');
 	// TODO: cache generation -> sourceFile	mapping for active editor
 

@@ -161,13 +161,9 @@ async function findTheAnys(
         return;
       }
       identifiers.push(node);
-      // node.start / end = character offsets
-      // node.loc = {start: {line, column, index}, end: {line, column, index}}
-      // column might be zero-based
-      // line is 1-based
     },
   });
-  // TODO: cache generation -> AST	mapping for active editor
+  // TODO: cache generation -> AST mapping for active editor
 
   // console.log('checking quickinfo for', identifiers.length, 'identifiers in', JSON.stringify(ivsToCheck.getIntervals()));
   const startMs = Date.now();

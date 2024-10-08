@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type * as ts from 'typescript';
 import {parse} from '@babel/parser';
 import traverse from '@babel/traverse';
-import {Identifier, SourceLocation} from '@babel/types';
+import {Identifier} from '@babel/types';
 import debounce from 'lodash.debounce';
 import { Interval, IntervalSet } from './interval-set';
 import { isAny } from './is-any';
@@ -125,7 +125,8 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	}
 
 	const parseStartMs = Date.now();
-	const ast = parse(document.getText(), {sourceType: 'module', plugins: ['typescript']});
+	// TODO: is jsx harmful for non-TSX?
+	const ast = parse(document.getText(), {sourceType: 'module', plugins: ['typescript', 'jsx']});
 	console.log(ast);
 	console.log('parsed', fileName, 'in', Date.now() - parseStartMs, 'ms');
 	const identifiers: Identifier[] = [];
@@ -161,8 +162,8 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 		console.log(node.name, '->', info?.body?.displayString);
 		if (isAny(info?.body?.displayString ?? '')) {
 			const {end} = loc;
-			const startPos = new vscode.Position(start.line, start.column);
-			const endPos = new vscode.Position(end.line, end.column);
+			const startPos = new vscode.Position(start.line-1, start.column);
+			const endPos = new vscode.Position(end.line-1, end.column);
 			const range = new vscode.Range(startPos, endPos);
 			return range;
 		}
@@ -223,7 +224,7 @@ async function quickInfoRequest(model: Model, position: vscode.Position) {
   const { scheme, fsPath, authority, path } = model.uri;
 	const req: ts.server.protocol.FileLocationRequestArgs = {
 		file: scheme === 'file' ? fsPath : `^/${scheme}/${authority || 'ts-nul-authority'}/${path.replace(/^\//, '')}`,
-		line: position.line + 1,
+		line: position.line,
 		offset: position.character,
 	};
   return await vscode.commands.executeCommand<ts.server.protocol.QuickInfoResponse | undefined>(

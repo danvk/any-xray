@@ -105,7 +105,7 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
 	// TODO: is there some kind of "idle" event I can use instead of this?
-	// setTimeout(updateVisibleEditors, 0);
+	setTimeout(updateVisibleEditors, 1000);
 }
 
 async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {

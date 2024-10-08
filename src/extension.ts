@@ -155,7 +155,7 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 		const start = node.getStart(sourceFile);
 		const end = node.getEnd();
 		const info = await quickInfoRequest(document, document.positionAt(start + 1));
-		// console.log(node.getText(), '->', info?.body?.displayString, elapsedMs, 'ms');
+		// console.log(node.getText(sourceFile), '->', info?.body?.displayString);
 		if (isAny(info?.body?.displayString ?? '')) {
 			const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
 			return range;
@@ -170,18 +170,22 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	}
 
 	const oldDetected = detectedAnys[fileName];
+	let anyRangesToSet;
 	if (!oldDetected || oldDetected.generation !== generation) {
+		// console.log('setting new anyRanges', anyRanges.length);
 		detectedAnys[fileName] = {
 			generation,
 			anyRanges: anyRanges,
 			checkedRanges: new IntervalSet([visibleIv]),
 		};
+		anyRangesToSet = anyRanges;
 	} else {
-		oldDetected.anyRanges = oldDetected.anyRanges.concat(anyRanges);
+		// console.log('concatenating to old anyRanges', oldDetected.anyRanges.length, '+', anyRanges.length);
+		oldDetected.anyRanges = anyRangesToSet = oldDetected.anyRanges.concat(anyRanges);
 		oldDetected.checkedRanges.add(visibleIv);
 	}
 
-	editor.setDecorations(decorationType, anyRanges);
+	editor.setDecorations(decorationType, anyRangesToSet);
 	// editor.setDecorations(errorType, errors);
 }
 

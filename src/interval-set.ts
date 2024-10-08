@@ -4,11 +4,11 @@ export type Interval = [number, number];
 
 /** Closed interval to half-open interval */
 function open([a, b]: Interval): Interval {
-  return [a, b+1];
+  return [a, b + 1];
 }
 /** Half-open interval to closed interval */
 function close([a, b]: Interval): Interval {
-  return [a, b-1];
+  return [a, b - 1];
 }
 
 /** Do two half-open intervals intersect? */
@@ -54,12 +54,12 @@ export class IntervalSet {
   /** Interval is closed */
   contains(interval: Interval): boolean {
     const openIv = open(interval);
-    return this.intervals.some(iv => contains(iv, openIv));
+    return this.intervals.some((iv) => contains(iv, openIv));
   }
 
   intersects(interval: Interval): boolean {
     const openIv = open(interval);
-    return this.intervals.some(iv => intersects(openIv, iv));
+    return this.intervals.some((iv) => intersects(openIv, iv));
   }
 
   /** Returns the parts of interval that are not covered in this set. */

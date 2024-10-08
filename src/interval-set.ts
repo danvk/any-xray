@@ -1,4 +1,4 @@
-import { arrayDifference, contains, union } from "interval-operations";
+import { arrayDifference, arrayUnion, contains, union } from "interval-operations";
 
 export type Interval = [number, number];
 
@@ -11,10 +11,12 @@ function close([a, b]: Interval): Interval {
   return [a, b-1];
 }
 
+/** All intervals coming in and out of this class are closed. */
 export class IntervalSet {
   // Invariant: intervals are disjoint, sorted, half-open.
   intervals: Interval[] = [];
 
+  /** Intervals are closed, need not be sorted */
   constructor(intervals?: Interval[]) {
     for (const interval of intervals ?? []) {
       this.add(interval);
@@ -25,9 +27,14 @@ export class IntervalSet {
     return this.intervals.length === 0;
   }
 
+  /** Interval is closed */
   add(interval: Interval) {
     const openIv = open(interval);
-    this.intervals = union(...this.intervals, openIv);
+    this.intervals = arrayUnion(this.intervals, [openIv]);
+  }
+
+  addOther(other: IntervalSet) {
+    this.intervals = arrayUnion(this.intervals, other.intervals);
   }
 
   includes(n: number): boolean {
@@ -39,6 +46,7 @@ export class IntervalSet {
     return false;
   }
 
+  /** Interval is closed */
   contains(interval: Interval): boolean {
     const openIv = open(interval);
     return this.intervals.some(iv => contains(iv, openIv));

@@ -25,15 +25,15 @@ interface DetectedAnys {
   checkedRanges: IntervalSet;
 }
 
-const fileVersions: { [fileName: string]: number } = {};
-const detectedAnys: { [fileName: string]: DetectedAnys } = {};
-
 function isTypeScript(document: vscode.TextDocument) {
   return (
     document.languageId === "typescript" ||
     document.languageId === "typescriptreact"
   );
 }
+
+const fileVersions: { [fileName: string]: number } = {};
+const detectedAnys: { [fileName: string]: DetectedAnys } = {};
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log("any-xray: activate");
@@ -263,11 +263,13 @@ export function deactivate() {
   }
 }
 
-type Model = vscode.TextDocument;
-
+// See https://github.com/orta/vscode-twoslash-queries/blob/4a564ada9543517ea8419896637c737229109ac5/src/helpers.ts#L6-L18
 /** Leverages the `tsserver` protocol to try to get the type info at the given `position`. */
-async function quickInfoRequest(model: Model, position: vscode.Position) {
-  const { scheme, fsPath, authority, path } = model.uri;
+async function quickInfoRequest(
+  doc: vscode.TextDocument,
+  position: vscode.Position,
+) {
+  const { scheme, fsPath, authority, path } = doc.uri;
   const req: ts.server.protocol.FileLocationRequestArgs = {
     file:
       scheme === "file"
@@ -276,7 +278,7 @@ async function quickInfoRequest(model: Model, position: vscode.Position) {
     line: position.line,
     offset: position.character,
   };
-  return await vscode.commands.executeCommand<
+  return vscode.commands.executeCommand<
     ts.server.protocol.QuickInfoResponse | undefined
   >("typescript.tsserverRequest", "quickinfo", req);
 }

@@ -11,29 +11,14 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:typescript"
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact"
   ],
   "main": "./out/extension.js",
   "repository": "https://github.com/danvk/any-xray.git",
   "author": "Dan Vanderkam <danvdk@gmail.com>",
   "license": "Apache-2.0",
   "contributes": {
-    "languages": [
-      {
-        "id": "typescript",
-        "extensions": [
-          ".ts",
-          ".tsx"
-        ],
-        "aliases": [
-          "TypeScript",
-          "ts"
-        ]
-      }
-    ],
-    "grammars": [],
-    "commands": [],
-    "keybindings": [],
     "configuration": {
       "title": "Any X-Ray Glasses",
       "properties": {

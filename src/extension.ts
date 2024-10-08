@@ -28,6 +28,10 @@ interface DetectedAnys {
 const fileVersions: { [fileName: string]: number } = {};
 const detectedAnys: { [fileName: string]: DetectedAnys } = {};
 
+function isTypeScript(document: vscode.TextDocument) {
+	return document.languageId === 'typescript' || document.languageId === 'typescriptreact';
+}
+
 export async function activate(context: vscode.ExtensionContext) {
 	console.log('any-xray: activate');
 	loadConfiguration();
@@ -37,8 +41,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			// this is fired on every keystroke
 			const {activeTextEditor} = vscode.window;
 			const {document} = event;
-			// TODO: is the activeTextEditor check helpful?
-      if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
+			console.log(document.fileName, document.languageId);
+      if (isTypeScript(document) && document === activeTextEditor?.document) {
 				const fileName = document.uri.fsPath;
 				fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
 				delete detectedAnys[fileName];  // invalidate cache
@@ -47,7 +51,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
 			const {activeTextEditor} = vscode.window;
-      if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
+      if (isTypeScript(document) && document === activeTextEditor?.document) {
 				// console.log('onDidOpenTextDocument');
         findTheAnysDebounced(document, activeTextEditor);
       }
@@ -58,7 +62,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
 	vscode.window.onDidChangeActiveTextEditor((editor) => {
-		if (editor?.document.languageId === 'typescript') {
+		if (editor && isTypeScript(editor.document)) {
 			// console.log("onDidChangeActiveTextEditor");
 			findTheAnysDebounced(editor.document, editor);
 		}
@@ -66,7 +70,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
 		// console.log('scroll!', event.visibleRanges);
-		if (event.textEditor?.document.languageId === 'typescript') {
+		if (event.textEditor && isTypeScript(event.textEditor.document)) {
 			// TODO: debouncing is only needed for getting quickinfo, not setting spans from cache
 			findTheAnysDebounced(event.textEditor.document, event.textEditor);
 		}
@@ -86,7 +90,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 		}
 		vscode.window.visibleTextEditors.forEach((editor) => {
-			if (editor.document.languageId === 'typescript' && visibleUris.has(editor.document.uri.fsPath)) {
+			if (isTypeScript(editor.document) && visibleUris.has(editor.document.uri.fsPath)) {
 				// console.log('initial pass for', editor.document.uri.fsPath);
 				findTheAnys(editor.document, editor);
 			}

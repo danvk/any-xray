@@ -2,7 +2,7 @@
   "name": "any-xray",
   "displayName": "any-xray",
   "description": "X-Ray vision for TypeScript 'any' types",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "danvk",
   "engines": {
     "vscode": "^1.91.0"

@@ -105,7 +105,7 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
 	// TODO: is there some kind of "idle" event I can use instead of this?
-	setTimeout(updateVisibleEditors, 1000);
+	// setTimeout(updateVisibleEditors, 1000);
 }
 
 async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
@@ -123,7 +123,7 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 		ivsToCheck = new IntervalSet([visibleIv]);
 	}
 	if (ivsToCheck.isEmpty()) {
-		console.log('already checked visible range');
+		// console.log('already checked visible range');
 		editor.setDecorations(decorationType, prev.anyRanges);
 		return;
 	}
@@ -131,8 +131,10 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	const parseStartMs = Date.now();
 	// TODO: is jsx harmful for non-TSX?
 	const ast = parse(document.getText(), {sourceType: 'module', plugins: ['typescript', 'jsx']});
-	console.log(ast);
-	console.log('parsed', fileName, 'in', Date.now() - parseStartMs, 'ms');
+	const elapsedMs = Date.now() - parseStartMs;
+	if (elapsedMs > 50) {
+		console.log('parsed', fileName, 'in', elapsedMs, 'ms');
+	}
 	const identifiers: Identifier[] = [];
 	traverse(ast, {
 		Identifier(path) {
@@ -155,7 +157,7 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	});
 	// TODO: cache generation -> AST	mapping for active editor
 
-	console.log('checking quickinfo for', identifiers.length, 'identifiers in', JSON.stringify(ivsToCheck.getIntervals()));
+	// console.log('checking quickinfo for', identifiers.length, 'identifiers in', JSON.stringify(ivsToCheck.getIntervals()));
 	const startMs = Date.now();
 	// TODO: batch these to let the user get some interactions in
 	const anyRanges = (await Promise.all(identifiers.map(async (node) => {
@@ -163,8 +165,8 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 		const {start} = loc;
 		const pos = new vscode.Position(start.line, start.column + 1);  // may need start.column+1
 		const info = await quickInfoRequest(document, pos);
-		console.log(node.name, '->', info?.body?.displayString);
 		if (isAny(info?.body?.displayString ?? '')) {
+			console.log('found an any', node.name, '->', info?.body?.displayString);
 			const {end} = loc;
 			const startPos = new vscode.Position(start.line-1, start.column);
 			const endPos = new vscode.Position(end.line-1, end.column);
@@ -172,7 +174,7 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 			return range;
 		}
 	}))).filter(x => !!x);
-	console.log('checked quickinfo for ', identifiers.length, 'identifers in', Date.now() - startMs, 'ms');
+	console.log('checked quickinfo for ', identifiers.length, 'identifers in', JSON.stringify(ivsToCheck.getIntervals()), 'in', Date.now() - startMs, 'ms');
 
 	const newGeneration = fileVersions[fileName] || 0;
 	if (generation !== newGeneration) {
@@ -203,7 +205,6 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 const findTheAnysDebounced = debounce(findTheAnys, 250);
 
 function loadConfiguration() {
-	console.log('any-xray: loading configuration');
 	const config = vscode.workspace.getConfiguration(configurationSection);
 	const configStyle = config.get('anyStyle') ?? fallbackDecorationStyle as vscode.DecorationRenderOptions;
 	if (decorationType) {
@@ -218,7 +219,12 @@ function loadConfiguration() {
 }
 
 export function deactivate() {
-	console.log('deactivate');
+	for (const key of Object.keys(detectedAnys)) {
+		delete detectedAnys[key];
+	}
+	for (const key of Object.keys(fileVersions)) {
+		delete fileVersions[key];
+	}
 }
 
 type Model = vscode.TextDocument;

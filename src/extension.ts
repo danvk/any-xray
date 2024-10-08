@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import * as ts from 'typescript';
+import type * as ts from 'typescript';
 import debounce from 'lodash.debounce';
 import { Interval, IntervalSet } from './interval-set';
 import { isAny } from './is-any';
@@ -29,6 +29,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	console.log('any-xray: activate');
 	loadConfiguration();
 
+	const tsapi = await import('typescript');
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((event) => {
 			// this is fired on every keystroke
@@ -39,14 +41,14 @@ export async function activate(context: vscode.ExtensionContext) {
 				const fileName = document.uri.fsPath;
 				fileVersions[fileName] = (fileVersions[fileName] || 0) + 1;
 				delete detectedAnys[fileName];  // invalidate cache
-        findTheAnysDebounced(event.document, activeTextEditor);
+        findTheAnysDebounced(tsapi, event.document, activeTextEditor);
       }
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
 			const {activeTextEditor} = vscode.window;
       if (document.languageId === 'typescript' && document === activeTextEditor?.document) {
 				// console.log('onDidOpenTextDocument');
-        findTheAnysDebounced(document, activeTextEditor);
+        findTheAnysDebounced(tsapi, document, activeTextEditor);
       }
     }),
 		vscode.workspace.onDidCloseTextDocument((document) => {
@@ -57,7 +59,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	vscode.window.onDidChangeActiveTextEditor((editor) => {
 		if (editor?.document.languageId === 'typescript') {
 			// console.log("onDidChangeActiveTextEditor");
-			findTheAnysDebounced(editor.document, editor);
+			findTheAnysDebounced(tsapi, editor.document, editor);
 		}
 	});
 
@@ -65,7 +67,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		// console.log('scroll!', event.visibleRanges);
 		if (event.textEditor?.document.languageId === 'typescript') {
 			// TODO: debouncing is only needed for getting quickinfo, not setting spans from cache
-			findTheAnysDebounced(event.textEditor.document, event.textEditor);
+			findTheAnysDebounced(tsapi, event.textEditor.document, event.textEditor);
 		}
 	});
 
@@ -85,7 +87,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.visibleTextEditors.forEach((editor) => {
 			if (editor.document.languageId === 'typescript' && visibleUris.has(editor.document.uri.fsPath)) {
 				// console.log('initial pass for', editor.document.uri.fsPath);
-				findTheAnys(editor.document, editor);
+				findTheAnys(tsapi, editor.document, editor);
 			}
 		});
 	};
@@ -101,7 +103,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	setTimeout(updateVisibleEditors, 0);
 }
 
-async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEditor) {
+async function findTheAnys(tsapi: typeof ts, document: vscode.TextDocument, editor: vscode.TextEditor) {
 	const fileName = document.uri.fsPath;
 	const generation = fileVersions[fileName] || 0;
 
@@ -122,14 +124,14 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	}
 
 	const parseStartMs = Date.now();
-	const sourceFile = ts.createSourceFile('/any-xray/' + fileName, document.getText(), ts.ScriptTarget.Latest, false);
+	const sourceFile = tsapi.createSourceFile('/any-xray/' + fileName, document.getText(), tsapi.ScriptTarget.Latest, false);
 	console.log('parsed', fileName, 'in', Date.now() - parseStartMs, 'ms');
 	// TODO: cache generation -> sourceFile	mapping for active editor
 
 	const identifiers: ts.Identifier[] = [];
 
   function visit(node: ts.Node) {
-		if (ts.isImportDeclaration(node)) {
+		if (tsapi.isImportDeclaration(node)) {
 			return;  // we want no part in these
 		}
 		// TODO: why does this need sourceFile? getFullStart() does not.
@@ -140,10 +142,10 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 		if (!ivsToCheck.intersects(nodeIv)) {
 			return;
 		}
-    if (ts.isIdentifier(node)) {
+    if (tsapi.isIdentifier(node)) {
 			identifiers.push(node);
 		}
-		ts.forEachChild(node, visit);
+		tsapi.forEachChild(node, visit);
   }
 
   visit(sourceFile);

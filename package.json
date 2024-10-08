@@ -4,6 +4,7 @@
   "description": "X-Ray vision for TypeScript 'any' types",
   "version": "0.2.1",
   "publisher": "danvk",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.91.0"
   },

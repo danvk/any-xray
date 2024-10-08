@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import {IntervalSet} from '../interval-set';
+import {intersects, IntervalSet} from '../interval-set';
 
 describe('interval-set', () => {
   it('should fill gaps', () => {
@@ -47,5 +47,24 @@ describe('interval-set', () => {
 
     set.addOther(uncovered);
     expect(set.getIntervals()).toEqual([[1, 9]]);
+  });
+
+  it('should find intersecting intervals', () => {
+    expect(intersects([0, 1], [1, 2])).toBe(false);
+    expect(intersects([0, 2], [1, 2])).toBe(true);
+    expect(intersects([10, 12], [9, 11])).toBe(true);
+    expect(intersects([10, 12], [9, 10])).toBe(false);
+  });
+
+  it('should find intersecting intervals in an IntervalSet', () => {
+    const set = new IntervalSet([[1, 3], [6, 8]]);
+    expect(set.intersects([0, 1])).toBe(true);
+    expect(set.intersects([0, 4])).toBe(true);
+    expect(set.intersects([4, 5])).toBe(false);
+    expect(set.intersects([4, 6])).toBe(true);
+    expect(set.intersects([5, 7])).toBe(true);
+    expect(set.intersects([3, 7])).toBe(true);
+    expect(set.intersects([0, 9])).toBe(true);
+    expect(set.intersects([9, 10])).toBe(false);
   });
 });

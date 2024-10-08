@@ -1,4 +1,4 @@
-import { arrayDifference, arrayUnion, contains, union } from "interval-operations";
+import { arrayDifference, arrayUnion, contains } from "interval-operations";
 
 export type Interval = [number, number];
 
@@ -11,12 +11,17 @@ function close([a, b]: Interval): Interval {
   return [a, b-1];
 }
 
+/** Do two half-open intervals intersect? */
+export function intersects(a: Interval, b: Interval): boolean {
+  return a[0] < b[1] && b[0] < a[1];
+}
+
 /** All intervals coming in and out of this class are closed. */
 export class IntervalSet {
   // Invariant: intervals are disjoint, sorted, half-open.
   intervals: Interval[] = [];
 
-  /** Intervals are closed, need not be sorted */
+  /** Intervals are closed, need not be sorted or disjoint */
   constructor(intervals?: Interval[]) {
     for (const interval of intervals ?? []) {
       this.add(interval);
@@ -50,6 +55,11 @@ export class IntervalSet {
   contains(interval: Interval): boolean {
     const openIv = open(interval);
     return this.intervals.some(iv => contains(iv, openIv));
+  }
+
+  intersects(interval: Interval): boolean {
+    const openIv = open(interval);
+    return this.intervals.some(iv => intersects(openIv, iv));
   }
 
   /** Returns the parts of interval that are not covered in this set. */

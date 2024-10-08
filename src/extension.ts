@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as ts from 'typescript';
 import debounce from 'lodash.debounce';
+import { Interval, IntervalSet } from './interval-set';
 
 const configurationSection = 'anyXray';
 
@@ -23,7 +24,8 @@ const fallbackDecorationStyle: vscode.DecorationRenderOptions = {
 interface DetectedAnys {
 	generation: number;
 	anyRanges: vscode.Range[];
-	checkedRanges: vscode.Range[];
+	/** IntervalSet of line numbers */
+	checkedRanges: IntervalSet;
 }
 
 const fileVersions: { [fileName: string]: number } = {};
@@ -113,13 +115,18 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 	// TODO: need to recompute when visible range changes
 	// TODO: what are the other ranges?
 	const visibleRange = editor.visibleRanges[0];
+	const visibleIv: Interval = [visibleRange.start.line, visibleRange.end.line];
 	const prev = detectedAnys[fileName];
+	let ivsToCheck: IntervalSet;
 	if (prev?.generation === generation) {
-		if (prev.checkedRanges.some(range => range.contains(visibleRange))) {
-			console.log('already checked visible range');
-			editor.setDecorations(decorationType, prev.anyRanges);
-			return;
-		}
+		ivsToCheck = prev.checkedRanges.uncovered(visibleIv);
+	} else {
+		ivsToCheck = new IntervalSet([visibleIv]);
+	}
+	if (ivsToCheck.isEmpty()) {
+		console.log('already checked visible range');
+		editor.setDecorations(decorationType, prev.anyRanges);
+		return;
 	}
 
 	const parseStartMs = Date.now();
@@ -133,24 +140,22 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 		if (ts.isImportDeclaration(node)) {
 			return;  // we want no part in these
 		}
-    if (ts.isIdentifier(node)) {
-			// TODO: why does this need sourceFile? getFullStart() does not.
-			const start = node.getStart(sourceFile);
-			const end = node.getEnd();
-			const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
-
-			// TODO: make sure that this range hasn't already been checked.
-			if (visibleRange.contains(range)) {
-				identifiers.push(node);
-			}
+		// TODO: why does this need sourceFile? getFullStart() does not.
+		const start = node.getStart(sourceFile);
+		const end = node.getEnd();
+		const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
+		const nodeIv: Interval = [range.start.line, range.end.line];
+		if (!ivsToCheck.intersects(nodeIv)) {
+			return;
 		}
-
-		// TODO: only descend into visible nodes
+    if (ts.isIdentifier(node)) {
+			identifiers.push(node);
+		}
 		ts.forEachChild(node, visit);
   }
 
   visit(sourceFile);
-	console.log('checking quickinfo for', identifiers.length, 'identifiers');
+	console.log('checking quickinfo for', identifiers.length, 'identifiers in', ivsToCheck.getIntervals());
 	const startMs = Date.now();
 	// TODO: batch these to let the user get some interactions in
 	const anyRanges = (await Promise.all(identifiers.map(async (node) => {
@@ -180,12 +185,11 @@ async function findTheAnys(document: vscode.TextDocument, editor: vscode.TextEdi
 		detectedAnys[fileName] = {
 			generation,
 			anyRanges: anyRanges,
-			checkedRanges: [visibleRange],
+			checkedRanges: new IntervalSet([visibleIv]),
 		};
 	} else {
 		oldDetected.anyRanges = oldDetected.anyRanges.concat(anyRanges);
-		// TODO: merge ranges
-		oldDetected.checkedRanges.push(visibleRange);
+		oldDetected.checkedRanges.add(visibleIv);
 	}
 
 	editor.setDecorations(decorationType, anyRanges);
@@ -214,7 +218,6 @@ function loadConfiguration() {
 export function deactivate() {
 	console.log('deactivate');
 }
-
 
 type Model = vscode.TextDocument;
 

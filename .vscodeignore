@@ -10,3 +10,5 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 vitest.config.mts
+icon-1024.png
+out/test

@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.2.1
+
+- Limit the work that `@babel/traverse` does; net effect is a speedup and the ability to run on the Mt. Everest of TypeScript, `checker.ts`. (#21)
+- Cache the AST for the active document to avoid re-parsing.
+
 ## 0.2.0
 
 - Re-architected to use VS Code's built-in TypeScript server (thanks for the tip @acutmore!).

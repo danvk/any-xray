@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import type * as ts from "typescript";
-import { parse } from "@babel/parser";
+import { parse, ParseResult } from "@babel/parser";
 import traverse from "@babel/traverse";
-import { Identifier } from "@babel/types";
+import { Identifier, File } from "@babel/types";
 import debounce from "lodash.debounce";
 import { Interval, IntervalSet } from "./interval-set";
 import { isAny } from "./is-any";
@@ -24,6 +24,13 @@ interface DetectedAnys {
   /** IntervalSet of line numbers */
   checkedRanges: IntervalSet;
 }
+
+interface CachedAst {
+	fileName: string;
+	generation: number;
+	ast: ParseResult<File>;
+}
+let cachedAst: CachedAst | null = null;
 
 function isTypeScript(document: vscode.TextDocument) {
   return (
@@ -137,17 +144,37 @@ async function findTheAnys(
     return;
   }
 
-  const parseStartMs = Date.now();
-  const ast = parse(document.getText(), {
-    sourceType: "module",
-    plugins: ["typescript", ...(fileName.endsWith('tsx') ? ["jsx" as const] : [])],
-  });
-  const elapsedMs = Date.now() - parseStartMs;
-  if (elapsedMs > 50) {
-    console.log("parsed", fileName, "in", elapsedMs, "ms");
-  }
+	let ast;
+	if (cachedAst && cachedAst.fileName === fileName && cachedAst.generation === generation) {
+		ast = cachedAst.ast;
+		console.log('re-using cached AST');
+	} else {
+		const parseStartMs = Date.now();
+		const parsedAst = parse(document.getText(), {
+			sourceType: "module",
+			plugins: ["typescript", ...(fileName.endsWith('tsx') ? ["jsx" as const] : [])],
+		});
+		const elapsedMs = Date.now() - parseStartMs;
+		if (elapsedMs > 50) {
+			console.log("parsed", fileName, "in", elapsedMs, "ms");
+		}
+		cachedAst = {fileName, generation, ast: parsedAst};
+		ast = parsedAst;
+	}
+
   const identifiers: Identifier[] = [];
   traverse(ast, {
+		enter(path) {
+			const {loc} = path.node;
+			if (!loc) {
+				return;
+			}
+			const {start, end} = loc;
+			const nodeIv: Interval = [start.line, end.line];
+			if (!ivsToCheck.intersects(nodeIv)) {
+				path.skip();
+			}
+    },
     Identifier(path) {
       const node = path.node;
       // console.log(node.name);

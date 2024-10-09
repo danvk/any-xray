@@ -138,7 +138,6 @@ async function findTheAnys(
   }
 
   const parseStartMs = Date.now();
-  // TODO: is jsx harmful for non-TSX?
   const ast = parse(document.getText(), {
     sourceType: "module",
     plugins: ["typescript", ...(fileName.endsWith('tsx') ? ["jsx" as const] : [])],
@@ -162,6 +161,7 @@ async function findTheAnys(
       }
       identifiers.push(node);
     },
+    noScope: true,  // See https://github.com/danvk/any-xray/issues/19
   });
   // TODO: cache generation -> AST mapping for active editor
 

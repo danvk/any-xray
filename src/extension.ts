@@ -147,7 +147,7 @@ async function findTheAnys(
 	let ast;
 	if (cachedAst && cachedAst.fileName === fileName && cachedAst.generation === generation) {
 		ast = cachedAst.ast;
-		console.log('re-using cached AST');
+		// console.log('re-using cached AST');
 	} else {
 		const parseStartMs = Date.now();
 		const parsedAst = parse(document.getText(), {

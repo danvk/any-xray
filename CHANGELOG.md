@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.3.0
+
+- Support Vue files with `<script lang="ts">`. (#23)
+- Don't report "any" types that overlap with TypeScript errors. (#24)
+
 ## 0.2.1
 
 - Limit the work that `@babel/traverse` does; net effect is a speedup and the ability to run on the Mt. Everest of TypeScript, `checker.ts`. (#21)

@@ -47,13 +47,11 @@
     "format:check": "prettier src --check"
   },
   "devDependencies": {
-    "@types/babel__traverse": "^7.20.6",
     "@types/lodash.debounce": "^4.0.9",
     "@types/mocha": "^10.0.7",
     "@types/node": "20.x",
     "@types/vscode": "1.91",
     "@typescript-eslint/eslint-plugin": "^8.3.0",
-    "@typescript-eslint/parser": "^8.55.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
     "@vscode/vsce": "^3.1.0",
@@ -63,8 +61,7 @@
     "vitest": "^2.1.2"
   },
   "dependencies": {
-    "@babel/parser": "^7.25.7",
-    "@babel/traverse": "^7.25.7",
+    "@typescript-eslint/parser": "^8.55.0",
     "interval-operations": "^2.0.0",
     "lodash.debounce": "^4.0.8",
     "vue-eslint-parser": "^10.2.0"

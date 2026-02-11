@@ -1,9 +1,7 @@
 import * as vscode from "vscode";
 import type * as ts from "typescript";
-import { parse, ParseResult } from "@babel/parser";
 import { parse as parseVue } from "vue-eslint-parser";
-import traverse from "@babel/traverse";
-import { Identifier, File } from "@babel/types";
+import { parse as parseTs } from "@typescript-eslint/parser";
 import debounce from "lodash.debounce";
 import { Interval, IntervalSet } from "./interval-set";
 import { isAny } from "./is-any";
@@ -26,11 +24,20 @@ interface DetectedAnys {
   checkedRanges: IntervalSet;
 }
 
+interface Identifier {
+  type: "Identifier";
+  name: string;
+  loc: {
+    start: { line: number; column: number };
+    end: { line: number; column: number };
+  };
+}
+
 interface CachedAst {
   fileName: string;
   generation: number;
   languageId: string;
-  ast: ParseResult<File> | any;
+  ast: any; // ESTree-compatible AST
 }
 let cachedAst: CachedAst | null = null;
 
@@ -175,12 +182,12 @@ async function findTheAnys(
         sourceType: "module",
       });
     } else {
-      parsedAst = parse(document.getText(), {
+      parsedAst = parseTs(document.getText(), {
+        loc: true,
+        range: true,
+        tokens: true,
         sourceType: "module",
-        plugins: [
-          "typescript",
-          ...(fileName.endsWith("tsx") ? ["jsx" as const] : []),
-        ],
+        ecmaVersion: 2020,
       });
     }
     const elapsedMs = Date.now() - parseStartMs;
@@ -197,76 +204,46 @@ async function findTheAnys(
   }
 
   const identifiers: Identifier[] = [];
-  if (document.languageId === "vue") {
-    // Custom traversal for Vue AST (ESTree)
-    const stack = [ast];
-    while (stack.length > 0) {
-      const node = stack.pop();
-      if (!node || typeof node !== "object") {
-        continue;
-      }
+  // Custom traversal for ESTree AST (works for both Vue and TypeScript-ESLint)
+  const stack = [ast];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") {
+      continue;
+    }
 
-      if (node.loc) {
-        const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
-        if (!ivsToCheck.intersects(nodeIv)) {
-          continue; // Prune branch if not in interesting range
-        }
-      }
-
-      if (node.type === "Identifier") {
-        identifiers.push(node as unknown as Identifier);
-      }
-
-      for (const key in node) {
-        if (
-          key === "parent" ||
-          key === "loc" ||
-          key === "range" ||
-          key === "tokens" ||
-          key === "comments"
-        ) {
-          continue;
-        }
-        const val = node[key];
-        if (Array.isArray(val)) {
-          for (let i = val.length - 1; i >= 0; i--) {
-            if (val[i] && typeof val[i] === "object" && val[i].type) {
-              stack.push(val[i]);
-            }
-          }
-        } else if (val && typeof val === "object" && val.type) {
-          stack.push(val);
-        }
+    if (node.loc) {
+      const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
+      if (!ivsToCheck.intersects(nodeIv)) {
+        continue; // Prune branch if not in interesting range
       }
     }
-  } else {
-    traverse(ast, {
-      enter(path) {
-        const { loc } = path.node;
-        if (!loc) {
-          return;
+
+    if (node.type === "Identifier") {
+      identifiers.push(node as unknown as Identifier);
+    }
+
+    for (const key in node) {
+      if (
+        key === "parent" ||
+        key === "loc" ||
+        key === "range" ||
+        key === "tokens" ||
+        key === "comments"
+      ) {
+        continue;
+      }
+      const val = node[key];
+      if (Array.isArray(val)) {
+        for (let i = val.length - 1; i >= 0; i--) {
+          if (val[i] && typeof val[i] === "object" && val[i].type) {
+            stack.push(val[i]);
+          }
         }
-        const { start, end } = loc;
-        const nodeIv: Interval = [start.line, end.line];
-        if (!ivsToCheck.intersects(nodeIv)) {
-          path.skip();
-        }
-      },
-      Identifier(path) {
-        const node = path.node;
-        // console.log(node.name);
-        if (!node.loc) {
-          return;
-        }
-        // TODO: can an Identifier span multiple lines?
-        const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
-        if (!ivsToCheck.intersects(nodeIv)) {
-          return;
-        }
-        identifiers.push(node);
-      },
-      noScope: true, // See https://github.com/danvk/any-xray/issues/19
-    });
+      } else if (val && typeof val === "object" && val.type) {
+        stack.push(val);
+      }
+    }
   }
   // TODO: cache generation -> AST mapping for active editor
 

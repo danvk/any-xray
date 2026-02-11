@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 import type * as ts from "typescript";
-import { parse, ParseResult } from "@babel/parser";
-import traverse from "@babel/traverse";
-import { Identifier, File } from "@babel/types";
+import { parse as parseVue } from "vue-eslint-parser";
+import type { AST as VueAST } from "vue-eslint-parser";
+import { parse as parseTs } from "@typescript-eslint/parser";
+import type { TSESTree } from "@typescript-eslint/types";
 import debounce from "lodash.debounce";
 import { Interval, IntervalSet } from "./interval-set";
 import { isAny } from "./is-any";
@@ -25,18 +26,31 @@ interface DetectedAnys {
   checkedRanges: IntervalSet;
 }
 
+type Identifier = TSESTree.Identifier | VueAST.ESLintIdentifier;
+
 interface CachedAst {
-	fileName: string;
-	generation: number;
-	ast: ParseResult<File>;
+  fileName: string;
+  generation: number;
+  languageId: string;
+  ast: TSESTree.Program | VueAST.ESLintProgram; // ESTree-compatible AST
 }
 let cachedAst: CachedAst | null = null;
 
 function isTypeScript(document: vscode.TextDocument) {
-  return (
+  if (
     document.languageId === "typescript" ||
     document.languageId === "typescriptreact"
-  );
+  ) {
+    return true;
+  }
+
+  // Check if Vue file uses TypeScript
+  if (document.languageId === "vue") {
+    const text = document.getText();
+    return /<script[^>]*lang=["']ts["']/i.test(text);
+  }
+
+  return false;
 }
 
 const fileVersions: { [fileName: string]: number } = {};
@@ -144,52 +158,88 @@ async function findTheAnys(
     return;
   }
 
-	let ast;
-	if (cachedAst && cachedAst.fileName === fileName && cachedAst.generation === generation) {
-		ast = cachedAst.ast;
-		// console.log('re-using cached AST');
-	} else {
-		const parseStartMs = Date.now();
-		const parsedAst = parse(document.getText(), {
-			sourceType: "module",
-			plugins: ["typescript", ...(fileName.endsWith('tsx') ? ["jsx" as const] : [])],
-		});
-		const elapsedMs = Date.now() - parseStartMs;
-		if (elapsedMs > 50) {
-			console.log("parsed", fileName, "in", elapsedMs, "ms");
-		}
-		cachedAst = {fileName, generation, ast: parsedAst};
-		ast = parsedAst;
-	}
+  let ast: TSESTree.Program | VueAST.ESLintProgram;
+  if (
+    cachedAst &&
+    cachedAst.fileName === fileName &&
+    cachedAst.generation === generation &&
+    cachedAst.languageId === document.languageId
+  ) {
+    ast = cachedAst.ast;
+    // console.log('re-using cached AST');
+  } else {
+    const parseStartMs = Date.now();
+    let parsedAst: TSESTree.Program | VueAST.ESLintProgram;
+    if (document.languageId === "vue") {
+      parsedAst = parseVue(document.getText(), {
+        parser: "@typescript-eslint/parser",
+        ecmaVersion: 2020,
+        sourceType: "module",
+      });
+    } else {
+      parsedAst = parseTs(document.getText(), {
+        loc: true,
+        range: true,
+        tokens: true,
+        sourceType: "module",
+        ecmaVersion: 2020,
+      });
+    }
+    const elapsedMs = Date.now() - parseStartMs;
+    if (elapsedMs > 50) {
+      console.log("parsed", fileName, "in", elapsedMs, "ms");
+    }
+    cachedAst = {
+      fileName,
+      generation,
+      languageId: document.languageId,
+      ast: parsedAst,
+    };
+    ast = parsedAst;
+  }
 
   const identifiers: Identifier[] = [];
-  traverse(ast, {
-		enter(path) {
-			const {loc} = path.node;
-			if (!loc) {
-				return;
-			}
-			const {start, end} = loc;
-			const nodeIv: Interval = [start.line, end.line];
-			if (!ivsToCheck.intersects(nodeIv)) {
-				path.skip();
-			}
-    },
-    Identifier(path) {
-      const node = path.node;
-      // console.log(node.name);
-      if (!node.loc) {
-        return;
-      }
-      // TODO: can an Identifier span multiple lines?
+  // Custom traversal for ESTree AST (works for both Vue and TypeScript-ESLint)
+  const stack: (TSESTree.Node | VueAST.Node)[] = [ast];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") {
+      continue;
+    }
+
+    if (node.loc) {
       const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
       if (!ivsToCheck.intersects(nodeIv)) {
-        return;
+        continue; // Prune branch if not in interesting range
       }
+    }
+
+    if (node.type === "Identifier") {
       identifiers.push(node);
-    },
-    noScope: true,  // See https://github.com/danvk/any-xray/issues/19
-  });
+    }
+
+    for (const key in node) {
+      if (
+        key === "parent" ||
+        key === "loc" ||
+        key === "range" ||
+        key === "tokens" ||
+        key === "comments"
+      ) {
+        continue;
+      }
+      const val = (node as any)[key];
+      if (Array.isArray(val)) {
+        for (let i = val.length - 1; i >= 0; i--) {
+          if (val[i] && typeof val[i] === "object" && val[i].type) {
+            stack.push(val[i] as TSESTree.Node | VueAST.Node);
+          }
+        }
+      } else if (val && typeof val === "object" && val.type) {
+        stack.push(val as TSESTree.Node | VueAST.Node);
+      }
+    }
+  }
   // TODO: cache generation -> AST mapping for active editor
 
   // console.log('checking quickinfo for', identifiers.length, 'identifiers in', JSON.stringify(ivsToCheck.getIntervals()));

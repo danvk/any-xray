@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
 import type * as ts from "typescript";
 import { parse as parseVue } from "vue-eslint-parser";
+import type { AST as VueAST } from "vue-eslint-parser";
 import { parse as parseTs } from "@typescript-eslint/parser";
+import type { TSESTree } from "@typescript-eslint/types";
 import debounce from "lodash.debounce";
 import { Interval, IntervalSet } from "./interval-set";
 import { isAny } from "./is-any";
@@ -24,20 +26,13 @@ interface DetectedAnys {
   checkedRanges: IntervalSet;
 }
 
-interface Identifier {
-  type: "Identifier";
-  name: string;
-  loc: {
-    start: { line: number; column: number };
-    end: { line: number; column: number };
-  };
-}
+type Identifier = TSESTree.Identifier | VueAST.ESLintIdentifier;
 
 interface CachedAst {
   fileName: string;
   generation: number;
   languageId: string;
-  ast: any; // ESTree-compatible AST
+  ast: TSESTree.Program | VueAST.ESLintProgram; // ESTree-compatible AST
 }
 let cachedAst: CachedAst | null = null;
 
@@ -163,7 +158,7 @@ async function findTheAnys(
     return;
   }
 
-  let ast;
+  let ast: TSESTree.Program | VueAST.ESLintProgram;
   if (
     cachedAst &&
     cachedAst.fileName === fileName &&
@@ -174,7 +169,7 @@ async function findTheAnys(
     // console.log('re-using cached AST');
   } else {
     const parseStartMs = Date.now();
-    let parsedAst;
+    let parsedAst: TSESTree.Program | VueAST.ESLintProgram;
     if (document.languageId === "vue") {
       parsedAst = parseVue(document.getText(), {
         parser: "@typescript-eslint/parser",
@@ -205,7 +200,7 @@ async function findTheAnys(
 
   const identifiers: Identifier[] = [];
   // Custom traversal for ESTree AST (works for both Vue and TypeScript-ESLint)
-  const stack = [ast];
+  const stack: (TSESTree.Node | VueAST.Node)[] = [ast];
   while (stack.length > 0) {
     const node = stack.pop();
     if (!node || typeof node !== "object") {
@@ -220,7 +215,7 @@ async function findTheAnys(
     }
 
     if (node.type === "Identifier") {
-      identifiers.push(node as unknown as Identifier);
+      identifiers.push(node);
     }
 
     for (const key in node) {
@@ -233,15 +228,15 @@ async function findTheAnys(
       ) {
         continue;
       }
-      const val = node[key];
+      const val = (node as any)[key];
       if (Array.isArray(val)) {
         for (let i = val.length - 1; i >= 0; i--) {
           if (val[i] && typeof val[i] === "object" && val[i].type) {
-            stack.push(val[i]);
+            stack.push(val[i] as TSESTree.Node | VueAST.Node);
           }
         }
       } else if (val && typeof val === "object" && val.type) {
-        stack.push(val);
+        stack.push(val as TSESTree.Node | VueAST.Node);
       }
     }
   }

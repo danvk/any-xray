@@ -129,20 +129,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  vscode.languages.onDidChangeDiagnostics(() => {
-    const editor = vscode.window.activeTextEditor;
-    if (editor) {
-      const diagnostics = vscode.languages.getDiagnostics(editor.document.uri);
-      // const rangesWithDiagnostics = diagnostics.map(diag => diag.range);
-      // const myRanges: vscode.Range[] = calculateYourRanges(); // Define your logic to calculate ranges.
-      // const filteredRanges = myRanges.filter(range =>
-      //     !rangesWithDiagnostics.some(diagnosticRange => diagnosticRange.intersection(range))
-      // );
-      console.log('diagnostics', diagnostics);
-    }
-  });
-
-
   // TODO: is there some kind of "idle" event I can use instead of this?
   // setTimeout(updateVisibleEditors, 1000);
 }

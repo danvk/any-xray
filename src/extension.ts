@@ -55,6 +55,23 @@ function isTypeScript(document: vscode.TextDocument) {
 
 const fileVersions: { [fileName: string]: number } = {};
 const detectedAnys: { [fileName: string]: DetectedAnys } = {};
+const tsErrorRanges: { [fileName: string]: vscode.Range[] } = {};
+
+function updateDecorations(editor: vscode.TextEditor) {
+  const fileName = editor.document.uri.fsPath;
+  const detected = detectedAnys[fileName];
+  if (!detected) {
+    editor.setDecorations(decorationType, []);
+    return;
+  }
+
+  const errors = tsErrorRanges[fileName] || [];
+  const rangesToSet = detected.anyRanges.filter((anyRange) => {
+    return !errors.some((errorRange) => errorRange.intersection(anyRange));
+  });
+
+  editor.setDecorations(decorationType, rangesToSet);
+}
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log("any-xray: activate");
@@ -131,16 +148,26 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  vscode.languages.onDidChangeDiagnostics(() => {
-    const editor = vscode.window.activeTextEditor;
-    if (editor) {
-      const diagnostics = vscode.languages.getDiagnostics(editor.document.uri);
-      // const rangesWithDiagnostics = diagnostics.map(diag => diag.range);
-      // const myRanges: vscode.Range[] = calculateYourRanges(); // Define your logic to calculate ranges.
-      // const filteredRanges = myRanges.filter(range =>
-      //     !rangesWithDiagnostics.some(diagnosticRange => diagnosticRange.intersection(range))
-      // );
-      console.log('diagnostics', diagnostics);
+  vscode.languages.onDidChangeDiagnostics((e) => {
+    for (const uri of e.uris) {
+      if (uri.scheme === "file") {
+        const fileName = uri.fsPath;
+        const diagnostics = vscode.languages.getDiagnostics(uri);
+        const errorRanges = diagnostics
+          .filter(
+            (d) =>
+              (d.source === "ts" || d.source === "typescript") &&
+              d.severity === vscode.DiagnosticSeverity.Error,
+          )
+          .map((d) => d.range);
+        tsErrorRanges[fileName] = errorRanges;
+
+        vscode.window.visibleTextEditors.forEach((editor) => {
+          if (editor.document.uri.fsPath === fileName) {
+            updateDecorations(editor);
+          }
+        });
+      }
     }
   });
 
@@ -167,7 +194,7 @@ async function findTheAnys(
   }
   if (ivsToCheck.isEmpty()) {
     // console.log('already checked visible range');
-    editor.setDecorations(decorationType, prev.anyRanges);
+    updateDecorations(editor);
     return;
   }
 
@@ -298,7 +325,6 @@ async function findTheAnys(
   }
 
   const oldDetected = detectedAnys[fileName];
-  let anyRangesToSet;
   if (!oldDetected || oldDetected.generation !== generation) {
     // console.log('setting new anyRanges', anyRanges.length);
     detectedAnys[fileName] = {
@@ -306,15 +332,13 @@ async function findTheAnys(
       anyRanges: anyRanges,
       checkedRanges: new IntervalSet([visibleIv]),
     };
-    anyRangesToSet = anyRanges;
   } else {
     // console.log('concatenating to old anyRanges', oldDetected.anyRanges.length, '+', anyRanges.length);
-    oldDetected.anyRanges = anyRangesToSet =
-      oldDetected.anyRanges.concat(anyRanges);
+    oldDetected.anyRanges = oldDetected.anyRanges.concat(anyRanges);
     oldDetected.checkedRanges.add(visibleIv);
   }
 
-  editor.setDecorations(decorationType, anyRangesToSet);
+  updateDecorations(editor);
   // editor.setDecorations(errorType, errors);
 }
 

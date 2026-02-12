@@ -5,11 +5,7 @@ import type { TSESTree } from "@typescript-eslint/types";
 import debounce from "lodash.debounce";
 import { Interval, IntervalSet } from "./interval-set";
 import { isAny } from "./is-any";
-import {
-  parseAst,
-  findIdentifiers,
-  Identifier,
-} from "./ast-utils";
+import { parseAst, findIdentifiers, Identifier } from "./ast-utils";
 
 const configurationSection = "anyXray";
 

@@ -25,7 +25,8 @@ function evolvingAnyNull() {
 }
 
 function evolvingAnyCompound() {
-  let val1 = null, val2 = 10;
+  let val1 = null,
+    val2 = 10;
   val2++;
   val1 = 12;
   return val1 + val2;

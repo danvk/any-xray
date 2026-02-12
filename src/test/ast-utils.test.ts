@@ -188,7 +188,10 @@ describe("ast-utils", () => {
     const ast = parseAst(code, "typescript");
     const identifiers = findIdentifiers(ast);
 
-    const assign = findNode(ast, (n) => n.type === "AssignmentExpression") as any;
+    const assign = findNode(
+      ast,
+      (n) => n.type === "AssignmentExpression",
+    ) as any;
     expect(assign).toBeDefined();
     const left = assign.left;
     expect(left.type).toBe("Identifier");
@@ -201,7 +204,10 @@ describe("ast-utils", () => {
     const ast = parseAst(code, "typescript");
     const identifiers = findIdentifiers(ast);
 
-    const assign = findNode(ast, (n) => n.type === "AssignmentExpression") as any;
+    const assign = findNode(
+      ast,
+      (n) => n.type === "AssignmentExpression",
+    ) as any;
     expect(assign).toBeDefined();
     expect(assign.operator).toBe("+=");
     const left = assign.left;

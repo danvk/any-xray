@@ -76,15 +76,19 @@ export function shouldIgnoreEvolvingAny(node: Identifier): boolean {
   // Example: `let x = something;` -> ignore `x` on the left
   // Example: `x = something;` -> ignore `x` on the left
   const parent = node.parent;
-  if (!parent) return false;
+  if (!parent) {
+    return false;
+  }
 
   // let declarator init: only suppress for `let` per requirement
-    if (parent.type === "VariableDeclarator" && (parent as any).id === node) {
+  if (parent.type === "VariableDeclarator" && (parent as any).id === node) {
     const decl = (parent as any).parent as AstNode | undefined | null;
     if (decl && decl.type === "VariableDeclaration") {
       const kind = (decl as any).kind;
       // Suppress for `let` and `var` regardless of whether an initializer exists.
-      if (kind === "let" || kind === "var") return true;
+      if (kind === "let" || kind === "var") {
+        return true;
+      }
     }
   }
 

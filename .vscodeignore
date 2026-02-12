@@ -12,3 +12,4 @@ vsc-extension-quickstart.md
 vitest.config.mts
 icon-1024.png
 out/test
+node_modules/eslint/lib/rules

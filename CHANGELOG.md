@@ -4,6 +4,8 @@
 
 - Support Vue files with `<script lang="ts">`. (#23)
 - Don't report "any" types that overlap with TypeScript errors. (#24)
+- Suppress warnings on destructuring assignment and "evolving any". (#26)
+- Change default style to be a little less aggressive. (#25)
 
 ## 0.2.1
 

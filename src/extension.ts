@@ -8,7 +8,6 @@ import { isAny } from "./is-any";
 import {
   parseAst,
   findIdentifiers,
-  shouldIgnoreIdentifier,
   Identifier,
 } from "./ast-utils";
 

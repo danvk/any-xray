@@ -4,8 +4,12 @@ import { parse as parseTs } from "@typescript-eslint/parser";
 import type { TSESTree } from "@typescript-eslint/types";
 import { Interval, IntervalSet } from "./interval-set";
 
-export type Identifier = TSESTree.Identifier | VueAST.ESLintIdentifier;
-export type AstNode = TSESTree.Node | VueAST.Node;
+export type Identifier = (TSESTree.Identifier | VueAST.ESLintIdentifier) & {
+  parent?: AstNode;
+};
+export type AstNode = (TSESTree.Node | VueAST.Node) & {
+  parent?: AstNode | null | undefined;
+};
 
 export function parseAst(
   text: string,
@@ -28,14 +32,14 @@ export function parseAst(
   }
 }
 
-export function shouldIgnoreIdentifier(node: any): boolean {
+export function shouldIgnoreIdentifier(node: Identifier): boolean {
   if (
     node.parent?.type === "Property" &&
     node.parent.parent?.type === "ObjectExpression" &&
     node.parent.key === node &&
     !node.parent.computed
   ) {
-    const objectExpression = node.parent.parent;
+    const objectExpression = node.parent.parent as AstNode;
     const parent = objectExpression.parent;
     if (!parent) {
       return false;
@@ -73,16 +77,16 @@ export function findIdentifiers(
   const identifiers: Identifier[] = [];
   // Custom traversal for ESTree AST (works for both Vue and TypeScript-ESLint)
   const stack: {
-    node: TSESTree.Node | VueAST.Node;
-    parent?: TSESTree.Node | VueAST.Node;
-  }[] = [{ node: ast }];
+    node: AstNode;
+    parent?: AstNode;
+  }[] = [{ node: ast as AstNode }];
 
   while (stack.length > 0) {
     const { node, parent } = stack.pop()!;
     if (!node || typeof node !== "object") {
       continue;
     }
-    (node as any).parent = parent;
+    node.parent = parent;
 
     if (node.loc && ivsToCheck) {
       const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
@@ -92,7 +96,7 @@ export function findIdentifiers(
     }
 
     if (node.type === "Identifier") {
-      if (!shouldIgnoreIdentifier(node)) {
+      if (!shouldIgnoreIdentifier(node as Identifier)) {
         identifiers.push(node as Identifier);
       }
     }
@@ -112,13 +116,13 @@ export function findIdentifiers(
         for (let i = val.length - 1; i >= 0; i--) {
           if (val[i] && typeof val[i] === "object" && val[i].type) {
             stack.push({
-              node: val[i] as TSESTree.Node | VueAST.Node,
+              node: val[i] as AstNode,
               parent: node,
             });
           }
         }
       } else if (val && typeof val === "object" && val.type) {
-        stack.push({ node: val as TSESTree.Node | VueAST.Node, parent: node });
+        stack.push({ node: val as AstNode, parent: node });
       }
     }
   }

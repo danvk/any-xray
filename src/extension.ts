@@ -1,12 +1,11 @@
 import * as vscode from "vscode";
 import type * as ts from "typescript";
-import { parse as parseVue } from "vue-eslint-parser";
 import type { AST as VueAST } from "vue-eslint-parser";
-import { parse as parseTs } from "@typescript-eslint/parser";
 import type { TSESTree } from "@typescript-eslint/types";
 import debounce from "lodash.debounce";
 import { Interval, IntervalSet } from "./interval-set";
 import { isAny } from "./is-any";
+import { parseAst, findIdentifiers, Identifier } from "./ast-utils";
 
 const configurationSection = "anyXray";
 
@@ -25,8 +24,6 @@ interface DetectedAnys {
   /** IntervalSet of line numbers */
   checkedRanges: IntervalSet;
 }
-
-type Identifier = TSESTree.Identifier | VueAST.ESLintIdentifier;
 
 interface CachedAst {
   fileName: string;
@@ -209,22 +206,10 @@ async function findTheAnys(
     // console.log('re-using cached AST');
   } else {
     const parseStartMs = Date.now();
-    let parsedAst: TSESTree.Program | VueAST.ESLintProgram;
-    if (document.languageId === "vue") {
-      parsedAst = parseVue(document.getText(), {
-        parser: "@typescript-eslint/parser",
-        ecmaVersion: 2020,
-        sourceType: "module",
-      });
-    } else {
-      parsedAst = parseTs(document.getText(), {
-        loc: true,
-        range: true,
-        tokens: true,
-        sourceType: "module",
-        ecmaVersion: 2020,
-      });
-    }
+    let parsedAst: TSESTree.Program | VueAST.ESLintProgram = parseAst(
+      document.getText(),
+      document.languageId,
+    );
     const elapsedMs = Date.now() - parseStartMs;
     if (elapsedMs > 50) {
       console.log("parsed", fileName, "in", elapsedMs, "ms");
@@ -238,48 +223,7 @@ async function findTheAnys(
     ast = parsedAst;
   }
 
-  const identifiers: Identifier[] = [];
-  // Custom traversal for ESTree AST (works for both Vue and TypeScript-ESLint)
-  const stack: (TSESTree.Node | VueAST.Node)[] = [ast];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (!node || typeof node !== "object") {
-      continue;
-    }
-
-    if (node.loc) {
-      const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
-      if (!ivsToCheck.intersects(nodeIv)) {
-        continue; // Prune branch if not in interesting range
-      }
-    }
-
-    if (node.type === "Identifier") {
-      identifiers.push(node);
-    }
-
-    for (const key in node) {
-      if (
-        key === "parent" ||
-        key === "loc" ||
-        key === "range" ||
-        key === "tokens" ||
-        key === "comments"
-      ) {
-        continue;
-      }
-      const val = (node as any)[key];
-      if (Array.isArray(val)) {
-        for (let i = val.length - 1; i >= 0; i--) {
-          if (val[i] && typeof val[i] === "object" && val[i].type) {
-            stack.push(val[i] as TSESTree.Node | VueAST.Node);
-          }
-        }
-      } else if (val && typeof val === "object" && val.type) {
-        stack.push(val as TSESTree.Node | VueAST.Node);
-      }
-    }
-  }
+  const identifiers: Identifier[] = findIdentifiers(ast, ivsToCheck);
   // TODO: cache generation -> AST mapping for active editor
 
   // console.log('checking quickinfo for', identifiers.length, 'identifiers in', JSON.stringify(ivsToCheck.getIntervals()));

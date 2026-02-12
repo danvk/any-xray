@@ -37,7 +37,9 @@ export function shouldIgnoreIdentifier(node: any): boolean {
   ) {
     const objectExpression = node.parent.parent;
     const parent = objectExpression.parent;
-    if (!parent) return false;
+    if (!parent) {
+      return false;
+    }
 
     if (
       parent.type === "VariableDeclarator" &&

@@ -136,4 +136,55 @@ describe("ast-utils", () => {
     // value 'x' (reference) should be INCLUDED
     expect(identifiers.includes(value as Identifier)).toBe(true);
   });
+
+  it("should ignore LHS identifier for let initialization (evolving any)", () => {
+    const code = `let x = foo;`;
+    const ast = parseAst(code, "typescript");
+    const identifiers = findIdentifiers(ast);
+
+    // Find the VariableDeclarator id `x`
+    const decl = findNode(ast, (n) => n.type === "VariableDeclarator") as any;
+    expect(decl).toBeDefined();
+    const id = decl.id;
+    // LHS `x` should be ignored
+    expect(identifiers.includes(id as Identifier)).toBe(false);
+  });
+
+  it("should ignore LHS identifier for var initialization (evolving any)", () => {
+    const code = `var x = foo;`;
+    const ast = parseAst(code, "typescript");
+    const identifiers = findIdentifiers(ast);
+
+    const decl = findNode(ast, (n) => n.type === "VariableDeclarator") as any;
+    expect(decl).toBeDefined();
+    const id = decl.id;
+    expect(identifiers.includes(id as Identifier)).toBe(false);
+  });
+
+  it("should ignore LHS identifier for assignment (reassignment)", () => {
+    const code = `x = foo;`;
+    const ast = parseAst(code, "typescript");
+    const identifiers = findIdentifiers(ast);
+
+    const assign = findNode(ast, (n) => n.type === "AssignmentExpression") as any;
+    expect(assign).toBeDefined();
+    const left = assign.left;
+    expect(left.type).toBe("Identifier");
+    expect(identifiers.includes(left as Identifier)).toBe(false);
+  });
+
+  // (this one is debatable)
+  it("should ignore LHS identifier for compound assignment (e.g., +=)", () => {
+    const code = `x += foo;`;
+    const ast = parseAst(code, "typescript");
+    const identifiers = findIdentifiers(ast);
+
+    const assign = findNode(ast, (n) => n.type === "AssignmentExpression") as any;
+    expect(assign).toBeDefined();
+    expect(assign.operator).toBe("+=");
+    const left = assign.left;
+    expect(left.type).toBe("Identifier");
+    // LHS of compound assignment should be ignored like a normal assignment
+    expect(identifiers.includes(left as Identifier)).toBe(false);
+  });
 });

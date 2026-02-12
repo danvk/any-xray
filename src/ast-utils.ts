@@ -70,6 +70,31 @@ export function shouldIgnoreIdentifier(node: Identifier): boolean {
   return false;
 }
 
+export function shouldIgnoreEvolvingAny(node: Identifier): boolean {
+  // Suppress diagnostics for identifiers that are being initialized with `let`
+  // (evolving any) or are the left-hand side of an assignment.
+  // Example: `let x = something;` -> ignore `x` on the left
+  // Example: `x = something;` -> ignore `x` on the left
+  const parent = node.parent;
+  if (!parent) return false;
+
+  // let declarator init: only suppress for `let` per requirement
+    if (parent.type === "VariableDeclarator" && (parent as any).id === node) {
+    const decl = (parent as any).parent as AstNode | undefined | null;
+    if (decl && decl.type === "VariableDeclaration") {
+      const kind = (decl as any).kind;
+      if ((kind === "let" || kind === "var") && (parent as any).init) return true;
+    }
+  }
+
+  // assignment expression: left-hand side
+  if (parent.type === "AssignmentExpression" && (parent as any).left === node) {
+    return true;
+  }
+
+  return false;
+}
+
 export function findIdentifiers(
   ast: TSESTree.Program | VueAST.ESLintProgram,
   ivsToCheck?: IntervalSet,
@@ -96,8 +121,9 @@ export function findIdentifiers(
     }
 
     if (node.type === "Identifier") {
-      if (!shouldIgnoreIdentifier(node as Identifier)) {
-        identifiers.push(node as Identifier);
+      const id = node as Identifier;
+      if (!shouldIgnoreIdentifier(id) && !shouldIgnoreEvolvingAny(id)) {
+        identifiers.push(id);
       }
     }
 

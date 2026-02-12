@@ -240,12 +240,16 @@ async function findTheAnys(
 
   const identifiers: Identifier[] = [];
   // Custom traversal for ESTree AST (works for both Vue and TypeScript-ESLint)
-  const stack: (TSESTree.Node | VueAST.Node)[] = [ast];
+  const stack: {
+    node: TSESTree.Node | VueAST.Node;
+    parent?: TSESTree.Node | VueAST.Node;
+  }[] = [{ node: ast }];
   while (stack.length > 0) {
-    const node = stack.pop();
+    const { node, parent } = stack.pop()!;
     if (!node || typeof node !== "object") {
       continue;
     }
+    (node as any).parent = parent;
 
     if (node.loc) {
       const nodeIv: Interval = [node.loc.start.line, node.loc.end.line];
@@ -255,7 +259,9 @@ async function findTheAnys(
     }
 
     if (node.type === "Identifier") {
-      identifiers.push(node);
+      if (!shouldIgnoreIdentifier(node)) {
+        identifiers.push(node);
+      }
     }
 
     for (const key in node) {
@@ -272,11 +278,14 @@ async function findTheAnys(
       if (Array.isArray(val)) {
         for (let i = val.length - 1; i >= 0; i--) {
           if (val[i] && typeof val[i] === "object" && val[i].type) {
-            stack.push(val[i] as TSESTree.Node | VueAST.Node);
+            stack.push({
+              node: val[i] as TSESTree.Node | VueAST.Node,
+              parent: node,
+            });
           }
         }
       } else if (val && typeof val === "object" && val.type) {
-        stack.push(val as TSESTree.Node | VueAST.Node);
+        stack.push({ node: val as TSESTree.Node | VueAST.Node, parent: node });
       }
     }
   }
@@ -371,6 +380,42 @@ export function deactivate() {
   for (const key of Object.keys(fileVersions)) {
     delete fileVersions[key];
   }
+}
+
+function shouldIgnoreIdentifier(node: any): boolean {
+  if (
+    node.parent?.type === "Property" &&
+    node.parent.parent?.type === "ObjectExpression" &&
+    node.parent.key === node &&
+    !node.parent.computed
+  ) {
+    const objectExpression = node.parent.parent;
+    const parent = objectExpression.parent;
+    if (!parent) return false;
+
+    if (
+      parent.type === "VariableDeclarator" &&
+      parent.id?.type === "ObjectPattern" &&
+      parent.init === objectExpression
+    ) {
+      return true;
+    }
+    if (
+      parent.type === "AssignmentExpression" &&
+      parent.left?.type === "ObjectPattern" &&
+      parent.right === objectExpression
+    ) {
+      return true;
+    }
+    if (
+      parent.type === "AssignmentPattern" &&
+      parent.left?.type === "ObjectPattern" &&
+      parent.right === objectExpression
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // See https://github.com/orta/vscode-twoslash-queries/blob/4a564ada9543517ea8419896637c737229109ac5/src/helpers.ts#L6-L18

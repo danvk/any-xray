@@ -83,7 +83,8 @@ export function shouldIgnoreEvolvingAny(node: Identifier): boolean {
     const decl = (parent as any).parent as AstNode | undefined | null;
     if (decl && decl.type === "VariableDeclaration") {
       const kind = (decl as any).kind;
-      if ((kind === "let" || kind === "var") && (parent as any).init) return true;
+      // Suppress for `let` and `var` regardless of whether an initializer exists.
+      if (kind === "let" || kind === "var") return true;
     }
   }
 

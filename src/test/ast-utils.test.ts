@@ -161,6 +161,28 @@ describe("ast-utils", () => {
     expect(identifiers.includes(id as Identifier)).toBe(false);
   });
 
+  it("should ignore LHS identifier for uninitialized let declaration", () => {
+    const code = `let x;`;
+    const ast = parseAst(code, "typescript");
+    const identifiers = findIdentifiers(ast);
+
+    const decl = findNode(ast, (n) => n.type === "VariableDeclarator") as any;
+    expect(decl).toBeDefined();
+    const id = decl.id;
+    expect(identifiers.includes(id as Identifier)).toBe(false);
+  });
+
+  it("should ignore LHS identifier for uninitialized var declaration", () => {
+    const code = `var x;`;
+    const ast = parseAst(code, "typescript");
+    const identifiers = findIdentifiers(ast);
+
+    const decl = findNode(ast, (n) => n.type === "VariableDeclarator") as any;
+    expect(decl).toBeDefined();
+    const id = decl.id;
+    expect(identifiers.includes(id as Identifier)).toBe(false);
+  });
+
   it("should ignore LHS identifier for assignment (reassignment)", () => {
     const code = `x = foo;`;
     const ast = parseAst(code, "typescript");

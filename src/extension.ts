@@ -14,7 +14,7 @@ let decorationType: vscode.TextEditorDecorationType;
 const fallbackDecorationStyle: vscode.DecorationRenderOptions = {
   backgroundColor: "rgba(255,0,0,0.1)",
   borderRadius: "3px",
-  color: "red",
+  // color: "red",
   outline: "1px solid rgba(255,0,0,0.4)",
 };
 

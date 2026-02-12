@@ -18,8 +18,7 @@ Change the way that symbols with `any` types are rendered. You can pass in anyth
 {
   "backgroundColor": "rgba(255,0,0,0.1)",
   "borderRadius": "3px",
-  "border": "solid 1px rgba(255,0,0)",
-  "color": "red"
+  "outline": "1px solid rgba(255,0,0,0.4)",
 }
 ```
 
@@ -32,7 +31,7 @@ Change the way that symbols with `any` types are rendered. You can pass in anyth
 
 This extension piggybacks on the "quickinfo" (hovertext) provided by the TypeScript Language Service in VS Code. It parses your TypeScript file and asks VS Code for quickinfo on all the identifiers in the visible range of active editors. If these end with something like ": any", then it colors them red.
 
-There are a few situations in which this will highlight identifiers that are safe, see [#1](https://github.com/danvk/any-xray/issues/1).
+If this extension highlights an `any` type incorrectly, please file an issue.
 
 [type-coverage]: https://github.com/plantain-00/type-coverage
 [no-unsafe-assignment]: https://typescript-eslint.io/rules/no-unsafe-assignment/
